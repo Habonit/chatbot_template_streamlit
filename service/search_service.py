@@ -35,12 +35,3 @@ class SearchService:
             lines.append("")
 
         return "\n".join(lines)
-
-    @staticmethod
-    def validate_api_key(api_key: str) -> bool:
-        try:
-            client = TavilyClient(api_key=api_key)
-            client.search("test", max_results=1)
-            return True
-        except Exception:
-            return False

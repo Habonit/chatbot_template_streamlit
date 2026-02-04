@@ -98,6 +98,24 @@ def render_sidebar() -> dict:
             help="최대 출력 토큰 수 (Gemini 2.5: 최대 65,536)",
         )
 
+        st.divider()
+
+        # Phase 02-7: 추론 모드 설정
+        reasoning_mode = st.toggle(
+            "추론 모드 (Reasoning Mode)",
+            value=False,
+            help="복잡한 추론이 필요한 질문에 gemini-2.5-pro 사용",
+        )
+
+        auto_reasoning = st.toggle(
+            "자동 추론 모드 감지",
+            value=True,
+            help="질문 유형에 따라 자동으로 추론 모드 활성화",
+        )
+
+        if reasoning_mode:
+            st.caption("📊 추론 모드 활성화 → gemini-2.5-pro 사용")
+
     st.sidebar.divider()
 
     with st.sidebar.expander("External Search", expanded=False):
@@ -112,6 +130,17 @@ def render_sidebar() -> dict:
             min_value=1,
             max_value=10,
             value=5,
+        )
+
+    st.sidebar.divider()
+
+    with st.sidebar.expander("Agent Settings", expanded=False):
+        max_iterations = st.slider(
+            "Max Tool Iterations",
+            min_value=1,
+            max_value=10,
+            value=5,
+            help="ReAct 에이전트가 툴을 호출할 수 있는 최대 횟수",
         )
 
     st.sidebar.divider()
@@ -190,5 +219,9 @@ def render_sidebar() -> dict:
         "search_enabled": search_enabled,
         "search_depth": search_depth,
         "max_results": max_results,
+        "max_iterations": max_iterations,
         "session_id": st.session_state.get("current_session", ""),
+        # Phase 02-7: 추론 모드 설정
+        "reasoning_mode": reasoning_mode,
+        "auto_reasoning": auto_reasoning,
     }

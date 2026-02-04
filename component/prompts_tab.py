@@ -1,42 +1,51 @@
 import streamlit as st
 from service.prompt_loader import PromptLoader
 
+# Phase 02-5: .py 기반 프롬프트 임포트
+from prompt.selector.tool_selector import TOOL_SELECTOR_PROMPT
+from prompt.tools.reasoning import REASONING_PROMPT
+from prompt.processor.result_processor import RESULT_PROCESSOR_PROMPT
+from prompt.response.response_generator import RESPONSE_GENERATOR_PROMPT
+from prompt.summary.summary_generator import SUMMARY_GENERATOR_PROMPT
+
 
 def get_prompt_info() -> dict:
     """프롬프트 정보를 반환"""
     prompt_loader = PromptLoader()
 
     return {
-        "system_prompt": {
-            "title": "System Prompt",
-            "description": "AI의 동작 모드를 정의하고 툴 사용 지시사항을 포함하는 기본 프롬프트입니다.",
-            "usage": "모든 대화에서 사용됩니다. PDF가 업로드된 경우 PDF 관련 지시사항이 추가됩니다.",
-            "content": prompt_loader.load("system", "base.txt"),
+        # Phase 02-5: ReAct 그래프 노드별 프롬프트 (.py 기반)
+        "tool_selector": {
+            "title": "Tool Selector Prompt",
+            "description": "ReAct 그래프에서 다음에 실행할 툴을 선택하는 프롬프트입니다.",
+            "usage": "tool_selector 노드에서 사용됩니다.",
+            "content": TOOL_SELECTOR_PROMPT,
         },
-        "pdf_extension": {
-            "title": "PDF Extension Prompt",
-            "description": "PDF가 업로드된 경우 시스템 프롬프트에 추가되는 지시사항입니다.",
-            "usage": "PDF가 업로드되고 처리된 세션에서만 사용됩니다.",
-            "content": prompt_loader.load("system", "pdf_extension.txt"),
+        "reasoning_prompt": {
+            "title": "Reasoning Tool Prompt",
+            "description": "단계별 추론을 수행하는 프롬프트입니다.",
+            "usage": "reasoning_tool 노드에서 사용됩니다.",
+            "content": REASONING_PROMPT,
         },
-        "chain_of_thought": {
-            "title": "Chain of Thought Prompt",
-            "description": "복잡한 추론이 필요한 경우 단계별 사고 과정을 유도하는 프롬프트입니다.",
-            "usage": "switch_to_reasoning 툴이 호출되어 gemini-2.5-pro로 전환될 때 사용됩니다.",
-            "content": prompt_loader.load("system", "chain_of_thought.txt"),
+        "result_processor": {
+            "title": "Result Processor Prompt",
+            "description": "툴 실행 결과를 분석하고 추가 툴 필요 여부를 판단하는 프롬프트입니다.",
+            "usage": "result_processor 노드에서 사용됩니다.",
+            "content": RESULT_PROCESSOR_PROMPT,
         },
-        "tavily_instruction": {
-            "title": "Tavily Search Instruction",
-            "description": "웹 검색 결과를 활용하여 답변을 작성하도록 지시하는 프롬프트입니다.",
-            "usage": "web_search 툴이 호출되어 Tavily 검색 결과를 LLM에 전달할 때 사용됩니다.",
-            "content": prompt_loader.load("search", "tavily_instruction.txt"),
+        "response_generator": {
+            "title": "Response Generator Prompt",
+            "description": "최종 응답을 생성하는 프롬프트입니다.",
+            "usage": "response_generator 노드에서 사용됩니다.",
+            "content": RESPONSE_GENERATOR_PROMPT,
         },
         "summary_prompt": {
-            "title": "Summary Prompt",
+            "title": "Summary Generator Prompt",
             "description": "대화 내용을 요약하기 위한 프롬프트입니다.",
-            "usage": "대화 턴이 3턴을 초과할 때 자동으로 사용됩니다.",
-            "content": prompt_loader.load("summary", "summary.txt"),
+            "usage": "summary_node에서 대화가 3턴 이상일 때 사용됩니다.",
+            "content": SUMMARY_GENERATOR_PROMPT,
         },
+        # 레거시 .txt 기반 프롬프트 (PDF 처리용)
         "normalization_prompt": {
             "title": "PDF Normalization Prompt",
             "description": "PDF에서 추출한 텍스트를 검색에 최적화된 형태로 정규화하는 프롬프트입니다.",

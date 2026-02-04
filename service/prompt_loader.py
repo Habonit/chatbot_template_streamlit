@@ -27,20 +27,6 @@ class PromptLoader:
         """템플릿 변수 치환"""
         return template.format(**kwargs)
 
-    def get_system_prompt(self, pdf_description: Optional[str] = None) -> str:
-        """시스템 프롬프트 가져오기"""
-        base = self.load("system", "base.txt")
-        if pdf_description:
-            extension = self.load("system", "pdf_extension.txt")
-            formatted_extension = self.format(extension, pdf_description=pdf_description)
-            return f"{base}\n\n{formatted_extension}"
-        return base
-
-    def get_summary_prompt(self, previous_summary: str, conversation: str) -> str:
-        """요약 프롬프트 가져오기"""
-        template = self.load("summary", "summary.txt")
-        return self.format(template, previous_summary=previous_summary, conversation=conversation)
-
     def get_normalization_prompt(self, chunk_text: str) -> str:
         """PDF 정규화 프롬프트 가져오기"""
         template = self.load("pdf", "normalization.txt")
@@ -50,17 +36,3 @@ class PromptLoader:
         """PDF 설명 생성 프롬프트 가져오기"""
         template = self.load("pdf", "description.txt")
         return self.format(template, sample_text=sample_text)
-
-    def get_cot_prompt(self, user_input: str, context: str = "") -> str:
-        """Chain of Thought 프롬프트 가져오기"""
-        template = self.load("system", "chain_of_thought.txt")
-        return self.format(template, user_input=user_input, context=context)
-
-    def get_tavily_prompt(self, search_results: str, user_query: str) -> str:
-        """Tavily 검색 프롬프트 가져오기"""
-        template = self.load("search", "tavily_instruction.txt")
-        return self.format(template, search_results=search_results, user_query=user_query)
-
-    def clear_cache(self) -> None:
-        """캐시 초기화"""
-        self._cache.clear()

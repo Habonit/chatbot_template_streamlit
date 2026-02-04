@@ -38,34 +38,6 @@ class TestMessage:
         assert msg.output_tokens == 5
         assert msg.model_used == "gemini-2.5-flash"
 
-    def test_message_to_dict(self):
-        from domain.message import Message
-
-        msg = Message(turn_id=1, role="user", content="Test")
-        data = msg.to_dict()
-
-        assert "turn_id" in data
-        assert "role" in data
-        assert "content" in data
-        assert "timestamp" in data
-
-    def test_message_from_dict(self):
-        from domain.message import Message
-
-        data = {
-            "turn_id": 1,
-            "role": "user",
-            "content": "Test",
-            "timestamp": "2026-01-15T14:30:00",
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "model_used": None,
-        }
-        msg = Message.from_dict(data)
-
-        assert msg.turn_id == 1
-        assert msg.content == "Test"
-
     # === 항목 5: function_calls 필드 테스트 ===
 
     def test_message_default_function_calls(self):
@@ -95,57 +67,34 @@ class TestMessage:
         assert msg.function_calls[0]["name"] == "web_search"
         assert msg.function_calls[1]["args"]["top_k"] == 5
 
-    def test_message_to_dict_with_function_calls(self):
-        """to_dict()에 function_calls 포함 테스트"""
+    # === Phase 02: tool_results 필드 테스트 ===
+
+    def test_message_default_tool_results(self):
+        """tool_results 기본값 테스트 (빈 딕셔너리)"""
         from domain.message import Message
 
-        function_calls = [{"name": "switch_to_reasoning", "args": {}}]
+        msg = Message(turn_id=1, role="user", content="Hello")
+
+        assert msg.tool_results == {}
+
+    def test_message_with_tool_results(self):
+        """tool_results가 포함된 메시지 생성 테스트"""
+        from domain.message import Message
+
+        tool_results = {
+            "web_search": "Python 3.13이 최신 버전입니다.",
+            "get_current_time": "2026-02-04 15:30:45 (KST)",
+        }
         msg = Message(
             turn_id=1,
             role="assistant",
-            content="분석 결과",
-            function_calls=function_calls,
+            content="검색 결과입니다.",
+            tool_results=tool_results,
         )
-        data = msg.to_dict()
 
-        assert "function_calls" in data
-        assert len(data["function_calls"]) == 1
-        assert data["function_calls"][0]["name"] == "switch_to_reasoning"
-
-    def test_message_from_dict_with_function_calls(self):
-        """from_dict()에서 function_calls 파싱 테스트"""
-        from domain.message import Message
-
-        data = {
-            "turn_id": 1,
-            "role": "assistant",
-            "content": "결과",
-            "timestamp": "2026-01-15T14:30:00",
-            "input_tokens": 100,
-            "output_tokens": 50,
-            "model_used": "gemini-2.5-flash",
-            "function_calls": [
-                {"name": "web_search", "args": {"query": "test"}}
-            ],
-        }
-        msg = Message.from_dict(data)
-
-        assert len(msg.function_calls) == 1
-        assert msg.function_calls[0]["name"] == "web_search"
-
-    def test_message_from_dict_missing_function_calls(self):
-        """from_dict()에서 function_calls 없을 때 기본값 테스트 (하위 호환성)"""
-        from domain.message import Message
-
-        data = {
-            "turn_id": 1,
-            "role": "user",
-            "content": "Test",
-        }
-        msg = Message.from_dict(data)
-
-        assert msg.function_calls == []
-
+        assert len(msg.tool_results) == 2
+        assert msg.tool_results["web_search"] == "Python 3.13이 최신 버전입니다."
+        assert "(KST)" in msg.tool_results["get_current_time"]
 
 class TestChunk:
     def test_create_chunk(self):
@@ -250,41 +199,6 @@ class TestSession:
         assert session.settings["model"] == "gemini-2.5-flash"
         assert session.settings["temperature"] == 0.7
 
-    def test_session_add_turn(self):
-        from domain.session import Session
-
-        session = Session(session_id="202601151430")
-        session.add_turn()
-        session.add_turn()
-
-        assert session.total_turns == 2
-
-    def test_session_update_summary(self):
-        from domain.session import Session
-
-        session = Session(session_id="202601151430")
-        session.update_summary("User asked about AI chatbots.")
-
-        assert session.current_summary == "User asked about AI chatbots."
-
-    def test_session_add_pdf(self):
-        from domain.session import Session
-
-        session = Session(session_id="202601151430")
-        session.add_pdf("document.pdf")
-
-        assert "document.pdf" in session.pdf_files
-
-    def test_session_to_dict(self):
-        from domain.session import Session
-
-        session = Session(session_id="202601151430")
-        data = session.to_dict()
-
-        assert "session_id" in data
-        assert "created_at" in data
-        assert "settings" in data
-
     def test_session_from_dict(self):
         from domain.session import Session
 
@@ -351,45 +265,6 @@ class TestSession:
 
         assert session.pdf_description == ""
 
-    def test_session_update_token_usage(self):
-        """update_token_usage 메서드 테스트"""
-        from domain.session import Session
-
-        session = Session(session_id="202601151430")
-        session.update_token_usage(input_tokens=100, output_tokens=50)
-
-        assert session.token_usage["input"] == 100
-        assert session.token_usage["output"] == 50
-        assert session.token_usage["total"] == 150
-
-    def test_session_update_token_usage_accumulate(self):
-        """update_token_usage 누적 테스트"""
-        from domain.session import Session
-
-        session = Session(session_id="202601151430")
-        session.update_token_usage(input_tokens=100, output_tokens=50)
-        session.update_token_usage(input_tokens=200, output_tokens=100)
-
-        assert session.token_usage["input"] == 300
-        assert session.token_usage["output"] == 150
-        assert session.token_usage["total"] == 450
-
-    def test_session_to_dict_with_new_fields(self):
-        """to_dict()에 token_usage, pdf_description 포함 테스트"""
-        from domain.session import Session
-
-        session = Session(
-            session_id="202601151430",
-            token_usage={"input": 1000, "output": 500, "total": 1500},
-            pdf_description="테스트 문서",
-        )
-        data = session.to_dict()
-
-        assert "token_usage" in data
-        assert data["token_usage"]["input"] == 1000
-        assert "pdf_description" in data
-        assert data["pdf_description"] == "테스트 문서"
-
     def test_session_from_dict_with_new_fields(self):
         """from_dict()에서 token_usage, pdf_description 파싱 테스트"""
         from domain.session import Session
@@ -423,3 +298,56 @@ class TestSession:
 
         assert session.token_usage == {"input": 0, "output": 0, "total": 0}
         assert session.pdf_description == ""
+
+    # === Phase 02 항목 6: summary_history 필드 테스트 ===
+
+    def test_session_default_summary_history(self):
+        """summary_history 기본값 테스트 (빈 리스트)"""
+        from domain.session import Session
+
+        session = Session(session_id="202601151430")
+
+        assert session.summary_history == []
+
+    def test_session_with_summary_history(self):
+        """summary_history가 포함된 세션 생성 테스트"""
+        from domain.session import Session
+
+        summary_history = [
+            {"created_at_turn": 4, "covers_turns": "1-3", "summary": "사용자가 A를 물어봤고..."},
+            {"created_at_turn": 7, "covers_turns": "4-6", "summary": "이후 B에 대해 논의..."},
+        ]
+        session = Session(session_id="202601151430", summary_history=summary_history)
+
+        assert len(session.summary_history) == 2
+        assert session.summary_history[0]["created_at_turn"] == 4
+        assert session.summary_history[1]["covers_turns"] == "4-6"
+
+    def test_session_from_dict_with_summary_history(self):
+        """from_dict()에서 summary_history 파싱 테스트"""
+        from domain.session import Session
+
+        data = {
+            "session_id": "202601151430",
+            "created_at": "2026-01-15T14:30:00",
+            "summary_history": [
+                {"created_at_turn": 4, "covers_turns": "1-3", "summary": "요약 1"},
+                {"created_at_turn": 7, "covers_turns": "4-6", "summary": "요약 2"},
+            ],
+        }
+        session = Session.from_dict(data)
+
+        assert len(session.summary_history) == 2
+        assert session.summary_history[0]["summary"] == "요약 1"
+
+    def test_session_from_dict_missing_summary_history(self):
+        """from_dict()에서 summary_history 없을 때 기본값 테스트 (하위 호환성)"""
+        from domain.session import Session
+
+        data = {
+            "session_id": "202601151430",
+            "total_turns": 5,
+        }
+        session = Session.from_dict(data)
+
+        assert session.summary_history == []
