@@ -19,12 +19,14 @@ class LLMService:
         tools: list[Callable] | None = None,
         temperature: float = 0.7,
         top_p: float = 0.9,
+        max_output_tokens: int = 8192,
     ) -> dict:
         model = model or self.default_model
 
         config = types.GenerateContentConfig(
             temperature=temperature,
             top_p=top_p,
+            max_output_tokens=max_output_tokens,
         )
 
         if tools:
@@ -60,6 +62,7 @@ class LLMService:
         tools: list[Callable] | None = None,
         temperature: float = 0.7,
         top_p: float = 0.9,
+        max_output_tokens: int = 8192,
     ) -> dict:
         contents = []
         for msg in messages:
@@ -71,6 +74,7 @@ class LLMService:
         config = types.GenerateContentConfig(
             temperature=temperature,
             top_p=top_p,
+            max_output_tokens=max_output_tokens,
         )
 
         if tools:

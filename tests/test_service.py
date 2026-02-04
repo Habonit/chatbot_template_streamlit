@@ -278,3 +278,37 @@ class TestLLMService:
         mock_genai.Client.side_effect = Exception("Invalid key")
 
         assert LLMService.validate_api_key("bad_key") is False
+
+    # === 항목 6: max_output_tokens 테스트 ===
+
+    @patch("service.llm_service.genai")
+    def test_generate_with_max_output_tokens(self, mock_genai):
+        """max_output_tokens 파라미터가 config에 전달되는지 테스트"""
+        from service.llm_service import LLMService
+
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.text = "Hello!"
+        mock_response.usage_metadata = Mock(
+            prompt_token_count=10,
+            candidates_token_count=5,
+            total_token_count=15,
+        )
+        mock_response.function_calls = None
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
+
+        service = LLMService(api_key="test_key")
+        result = service.generate(
+            "Hello",
+            model="gemini-2.5-flash",
+            max_output_tokens=4096,
+        )
+
+        # generate_content가 호출되었는지 확인
+        mock_client.models.generate_content.assert_called_once()
+        call_kwargs = mock_client.models.generate_content.call_args
+        config = call_kwargs.kwargs.get("config") or call_kwargs[1].get("config")
+
+        assert config.max_output_tokens == 4096
+        assert result["text"] == "Hello!"
