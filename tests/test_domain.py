@@ -230,3 +230,116 @@ class TestSession:
 
         assert len(session_id) == 12
         assert session_id.isdigit()
+
+    # === 항목 7: Session 도메인 확장 테스트 ===
+
+    def test_session_with_token_usage(self):
+        """token_usage 필드가 포함된 세션 생성 테스트"""
+        from domain.session import Session
+
+        token_usage = {"input": 1000, "output": 500, "total": 1500}
+        session = Session(session_id="202601151430", token_usage=token_usage)
+
+        assert session.token_usage["input"] == 1000
+        assert session.token_usage["output"] == 500
+        assert session.token_usage["total"] == 1500
+
+    def test_session_default_token_usage(self):
+        """token_usage 기본값 테스트"""
+        from domain.session import Session
+
+        session = Session(session_id="202601151430")
+
+        assert session.token_usage == {"input": 0, "output": 0, "total": 0}
+
+    def test_session_with_pdf_description(self):
+        """pdf_description 필드 테스트"""
+        from domain.session import Session
+
+        session = Session(
+            session_id="202601151430",
+            pdf_description="AI 기술 동향에 대한 보고서",
+        )
+
+        assert session.pdf_description == "AI 기술 동향에 대한 보고서"
+
+    def test_session_default_pdf_description(self):
+        """pdf_description 기본값 테스트"""
+        from domain.session import Session
+
+        session = Session(session_id="202601151430")
+
+        assert session.pdf_description == ""
+
+    def test_session_update_token_usage(self):
+        """update_token_usage 메서드 테스트"""
+        from domain.session import Session
+
+        session = Session(session_id="202601151430")
+        session.update_token_usage(input_tokens=100, output_tokens=50)
+
+        assert session.token_usage["input"] == 100
+        assert session.token_usage["output"] == 50
+        assert session.token_usage["total"] == 150
+
+    def test_session_update_token_usage_accumulate(self):
+        """update_token_usage 누적 테스트"""
+        from domain.session import Session
+
+        session = Session(session_id="202601151430")
+        session.update_token_usage(input_tokens=100, output_tokens=50)
+        session.update_token_usage(input_tokens=200, output_tokens=100)
+
+        assert session.token_usage["input"] == 300
+        assert session.token_usage["output"] == 150
+        assert session.token_usage["total"] == 450
+
+    def test_session_to_dict_with_new_fields(self):
+        """to_dict()에 token_usage, pdf_description 포함 테스트"""
+        from domain.session import Session
+
+        session = Session(
+            session_id="202601151430",
+            token_usage={"input": 1000, "output": 500, "total": 1500},
+            pdf_description="테스트 문서",
+        )
+        data = session.to_dict()
+
+        assert "token_usage" in data
+        assert data["token_usage"]["input"] == 1000
+        assert "pdf_description" in data
+        assert data["pdf_description"] == "테스트 문서"
+
+    def test_session_from_dict_with_new_fields(self):
+        """from_dict()에서 token_usage, pdf_description 파싱 테스트"""
+        from domain.session import Session
+
+        data = {
+            "session_id": "202601151430",
+            "created_at": "2026-01-15T14:30:00",
+            "last_updated": "2026-01-15T14:30:00",
+            "total_turns": 5,
+            "current_summary": "Summary",
+            "pdf_files": ["doc.pdf"],
+            "settings": {"model": "gemini-2.5-flash"},
+            "token_usage": {"input": 1000, "output": 500, "total": 1500},
+            "pdf_description": "AI 기술 동향 보고서",
+        }
+        session = Session.from_dict(data)
+
+        assert session.token_usage["input"] == 1000
+        assert session.token_usage["total"] == 1500
+        assert session.pdf_description == "AI 기술 동향 보고서"
+
+    def test_session_from_dict_missing_new_fields(self):
+        """from_dict()에서 새 필드 없을 때 기본값 테스트 (하위 호환성)"""
+        from domain.session import Session
+
+        data = {
+            "session_id": "202601151430",
+            "total_turns": 5,
+        }
+        session = Session.from_dict(data)
+
+        assert session.token_usage == {"input": 0, "output": 0, "total": 0}
+        assert session.pdf_description == ""
