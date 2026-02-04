@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import time
 from pathlib import Path
 
 
@@ -47,9 +48,20 @@ def render_pdf_tab(
         _render_chunk_table(chunks)
 
 
+def _format_time(seconds: float) -> str:
+    """초를 읽기 쉬운 형식으로 변환"""
+    if seconds < 60:
+        return f"약 {int(seconds)}초"
+    else:
+        minutes = int(seconds // 60)
+        secs = int(seconds % 60)
+        return f"약 {minutes}분 {secs}초"
+
+
 def _run_preprocessing(on_process: callable) -> None:
     progress_bar = st.progress(0)
-    status_text = st.empty()
+    status_container = st.container()
+    time_container = st.empty()
 
     steps = [
         (0.2, "텍스트 추출 중..."),
@@ -59,17 +71,44 @@ def _run_preprocessing(on_process: callable) -> None:
         (1.0, "완료"),
     ]
 
+    step_times = {}
+
     for progress, status in steps:
-        status_text.text(status)
         progress_bar.progress(progress)
 
         if progress < 1.0:
-            result = on_process(status)
-            if result and result.get("error"):
-                st.error(result["error"])
-                return
+            with status_container:
+                with st.spinner(status):
+                    # 청크 수 기반 시간 추정 (정규화 및 임베딩 단계)
+                    if status == "정규화 중..." and "chunks" in st.session_state:
+                        chunk_count = len(st.session_state.chunks)
+                        estimated_seconds = chunk_count * 2  # 청크당 약 2초
+                        time_container.caption(
+                            f"📊 처리 대상: {chunk_count}개 청크 | "
+                            f"예상 소요 시간: {_format_time(estimated_seconds)}"
+                        )
+                    elif status == "임베딩 생성 중..." and "chunks" in st.session_state:
+                        chunk_count = len(st.session_state.chunks)
+                        estimated_seconds = chunk_count * 0.5  # 청크당 약 0.5초
+                        time_container.caption(
+                            f"📊 처리 대상: {chunk_count}개 청크 | "
+                            f"예상 소요 시간: {_format_time(estimated_seconds)}"
+                        )
+                    else:
+                        time_container.empty()
 
-    st.success("전처리가 완료되었습니다!")
+                    start_time = time.time()
+                    result = on_process(status)
+                    elapsed = time.time() - start_time
+                    step_times[status] = elapsed
+
+                    if result and result.get("error"):
+                        st.error(result["error"])
+                        return
+
+    time_container.empty()
+    total_time = sum(step_times.values())
+    st.success(f"전처리가 완료되었습니다! (총 소요 시간: {_format_time(total_time)})")
 
 
 def _render_chunk_stats(chunks: list) -> None:

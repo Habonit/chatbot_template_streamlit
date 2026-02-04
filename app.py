@@ -1,3 +1,4 @@
+"""Phase 02-6: SQLite 단일 저장소로 통합된 Streamlit 앱"""
 import streamlit as st
 from pathlib import Path
 import os
@@ -5,18 +6,18 @@ from dotenv import load_dotenv
 
 from domain.message import Message
 from domain.session import Session
-from repository.conversation_repo import ConversationRepository
 from repository.embedding_repo import EmbeddingRepository
 from repository.pdf_extractor import PDFExtractor
 from service.llm_service import LLMService
 from service.embedding_service import EmbeddingService
 from service.rag_service import RAGService
-from service.summary_service import SummaryService
-from service.search_service import SearchService
-from service.tool_manager import ToolManager
+from service.react_graph import ReactGraphBuilder
+from service.session_manager import SessionManager
 from component.sidebar import render_sidebar
 from component.chat_tab import render_chat_tab
 from component.pdf_tab import render_pdf_tab
+from component.overview_tab import render_overview_tab
+from component.prompts_tab import render_prompts_tab
 
 load_dotenv()
 
@@ -28,6 +29,7 @@ st.set_page_config(
 
 DATA_PATH = Path("data/sessions")
 UPLOAD_PATH = Path("data/uploads/temp")
+DB_PATH = "data/langgraph.db"
 DATA_PATH.mkdir(parents=True, exist_ok=True)
 UPLOAD_PATH.mkdir(parents=True, exist_ok=True)
 
@@ -46,6 +48,8 @@ def init_session_state():
         st.session_state.token_usage = {"input": 0, "output": 0, "total": 0}
     if "summary" not in st.session_state:
         st.session_state.summary = ""
+    if "summary_history" not in st.session_state:
+        st.session_state.summary_history = []
     if "chunks" not in st.session_state:
         st.session_state.chunks = []
     if "pdf_description" not in st.session_state:
@@ -59,127 +63,89 @@ def get_turn_count(messages: list[Message]) -> int:
 def handle_chat_message(
     user_input: str,
     settings: dict,
-    conv_repo: ConversationRepository,
     embed_repo: EmbeddingRepository,
 ) -> dict:
+    """LangGraph 기반 채팅 메시지 처리 (Phase 02-6: SqliteSaver가 자동 저장)"""
     if not settings.get("gemini_api_key"):
         return {"text": "Gemini API Key를 입력해주세요.", "error": True}
 
     session_id = st.session_state.current_session
 
-    llm_service = LLMService(
-        api_key=settings["gemini_api_key"],
-        default_model=settings["model"],
-    )
-    summary_service = SummaryService()
-    tool_manager = ToolManager()
-
-    tool_manager.register_switch_tool()
-
-    if st.session_state.chunks:
-        embed_service = EmbeddingService(
-            api_key=settings["gemini_api_key"],
-            model=settings["embedding_model"],
-        )
-
-        def search_pdf_knowledge(query: str, top_k: int = 5) -> list[dict]:
-            query_embedding = embed_service.create_embedding(query)
-            results = embed_repo.search_similar(session_id, query_embedding, top_k)
-            return [{"content": r["chunk"].normalized_text, "score": r["score"]} for r in results]
-
-        tool_manager.register_tool(search_pdf_knowledge)
-
-    if settings.get("search_enabled") and settings.get("tavily_api_key"):
-        search_service = SearchService(api_key=settings["tavily_api_key"])
-
-        def web_search(query: str) -> str:
-            results = search_service.search(
-                query,
-                search_depth=settings["search_depth"],
-                max_results=settings["max_results"],
-            )
-            return search_service.format_for_llm(results)
-
-        tool_manager.register_tool(web_search)
-
-    turn_count = get_turn_count(st.session_state.messages) + 1
-
-    user_msg = Message(turn_id=turn_count, role="user", content=user_input)
-    st.session_state.messages.append(user_msg)
-    conv_repo.append_message(session_id, user_msg)
-
-    if summary_service.should_summarize(turn_count):
-        to_summarize, to_keep = summary_service.get_turns_to_summarize(
-            st.session_state.messages[:-1], turn_count - 1
-        )
-        if to_summarize:
-            summary_prompt = summary_service.build_summary_prompt(
-                st.session_state.summary, to_summarize
-            )
-            summary_result = llm_service.generate(summary_prompt, model="gemini-2.5-flash")
-            st.session_state.summary = summary_result["text"]
-    else:
-        to_keep = st.session_state.messages[:-1]
-
-    context = summary_service.build_context(
-        messages=to_keep,
-        summary=st.session_state.summary,
-        system_prompt=_get_system_prompt(st.session_state.pdf_description),
-    )
-
-    full_prompt = f"{context}\n\n[현재 사용자 입력]\n{user_input}"
-
+    # 토큰 제한 체크
     current_tokens = st.session_state.token_usage["total"]
     if current_tokens >= TOKEN_LIMIT:
         return {"text": f"토큰 제한({TOKEN_LIMIT_K}k)을 초과했습니다. 새 세션을 시작해주세요.", "error": True}
     if current_tokens >= TOKEN_LIMIT * 0.8:
         st.warning(f"토큰 사용량이 80%를 초과했습니다 ({current_tokens:,}/{TOKEN_LIMIT:,})")
 
-    model_to_use = settings["model"]
-    result = llm_service.generate(
-        full_prompt,
-        model=model_to_use,
-        tools=tool_manager.get_tools() if tool_manager.get_tool_names() else None,
-        temperature=settings["temperature"],
-        top_p=settings["top_p"],
+    turn_count = get_turn_count(st.session_state.messages) + 1
+
+    # 사용자 메시지를 st.session_state에 저장 (UI 표시용)
+    user_msg = Message(turn_id=turn_count, role="user", content=user_input)
+    st.session_state.messages.append(user_msg)
+    # Phase 02-6: CSV 저장 제거 - SqliteSaver가 그래프 상태로 저장
+
+    # 서비스 구성
+    search_service = None
+    embedding_service = None
+
+    # 웹 검색 서비스 (API 키가 있는 경우)
+    if settings.get("tavily_api_key"):
+        from service.search_service import SearchService
+        search_service = SearchService(api_key=settings["tavily_api_key"])
+
+    # PDF 임베딩 서비스 (청크가 있는 경우)
+    if st.session_state.chunks:
+        embedding_service = EmbeddingService(
+            api_key=settings["gemini_api_key"],
+            model=settings.get("embedding_model", "gemini-embedding-001"),
+        )
+
+    graph_builder = ReactGraphBuilder(
+        api_key=settings["gemini_api_key"],
+        model=settings.get("model", "gemini-2.0-flash"),
+        temperature=settings.get("temperature", 0.7),
+        max_iterations=settings.get("max_iterations", 5),
+        search_service=search_service,
+        embedding_service=embedding_service,
+        embedding_repo=embed_repo if st.session_state.chunks else None,
+        db_path=DB_PATH,
+    )
+    result = graph_builder.invoke(
+        user_input=user_input,
+        session_id=session_id,
+        messages=st.session_state.messages[:-1],  # 현재 사용자 메시지 제외
+        summary=st.session_state.summary,
+        pdf_description=st.session_state.pdf_description,
+        turn_count=turn_count,
+        summary_history=st.session_state.summary_history,
     )
 
-    if result.get("function_calls"):
-        for fc in result["function_calls"]:
-            if fc["name"] == "switch_to_reasoning":
-                model_to_use = "gemini-2.5-pro"
-                result = llm_service.generate(
-                    full_prompt,
-                    model=model_to_use,
-                    tools=tool_manager.get_tools(),
-                    temperature=settings["temperature"],
-                    top_p=settings["top_p"],
-                )
-                break
-            else:
-                tool_result = tool_manager.execute_tool(fc["name"], fc["args"])
-                enhanced_prompt = f"{full_prompt}\n\n[Tool Result: {fc['name']}]\n{tool_result}"
-                result = llm_service.generate(
-                    enhanced_prompt,
-                    model=model_to_use,
-                    temperature=settings["temperature"],
-                    top_p=settings["top_p"],
-                )
+    # 그래프에서 생성된 요약 업데이트
+    if result.get("summary"):
+        st.session_state.summary = result["summary"]
+    if result.get("summary_history"):
+        st.session_state.summary_history = result["summary_history"]
 
+    # 어시스턴트 메시지를 st.session_state에 저장 (UI 표시용)
+    function_calls = [{"name": t, "args": {}} for t in result.get("tool_history", [])]
     assistant_msg = Message(
         turn_id=turn_count,
         role="assistant",
-        content=result["text"],
-        input_tokens=result["input_tokens"],
-        output_tokens=result["output_tokens"],
-        model_used=result["model_used"],
+        content=result.get("text", ""),
+        input_tokens=result.get("input_tokens", 0),
+        output_tokens=result.get("output_tokens", 0),
+        model_used=result.get("model_used", ""),
+        function_calls=function_calls,
+        tool_results=result.get("tool_results", {}),
     )
     st.session_state.messages.append(assistant_msg)
-    conv_repo.append_message(session_id, assistant_msg)
+    # Phase 02-6: CSV 저장 제거 - SqliteSaver가 그래프 상태로 저장
 
-    st.session_state.token_usage["input"] += result["input_tokens"]
-    st.session_state.token_usage["output"] += result["output_tokens"]
-    st.session_state.token_usage["total"] += result["total_tokens"]
+    # 토큰 사용량 업데이트
+    st.session_state.token_usage["input"] += result.get("input_tokens", 0)
+    st.session_state.token_usage["output"] += result.get("output_tokens", 0)
+    st.session_state.token_usage["total"] += result.get("total_tokens", 0)
 
     return result
 
@@ -220,30 +186,16 @@ def handle_pdf_process(step: str, settings: dict) -> dict:
             st.session_state.chunks = chunks
 
         elif step == "정규화 중...":
+            from service.prompt_loader import PromptLoader
             llm_service = LLMService(api_key=settings["gemini_api_key"])
+            prompt_loader = PromptLoader()
             for chunk in st.session_state.chunks:
-                prompt = f"""다음 텍스트를 검색에 최적화된 형태로 정규화하세요.
-규칙:
-1. 오탈자와 띄어쓰기 오류를 수정합니다.
-2. 불필요한 특수문자와 중복 공백을 제거합니다.
-3. 약어가 있다면 괄호 안에 풀이를 추가합니다.
-4. 핵심 키워드는 그대로 유지합니다.
-5. 원문의 의미를 변경하지 않습니다.
-
-원본 텍스트:
-{chunk.original_text}
-
-정규화된 텍스트:"""
+                prompt = prompt_loader.get_normalization_prompt(chunk_text=chunk.original_text)
                 result = llm_service.generate(prompt, model="gemini-2.5-flash")
                 chunk.normalized_text = result["text"]
 
-            desc_prompt = f"""다음 문서 내용을 바탕으로 이 PDF 문서에 대한 간단한 설명(description)을 작성하세요.
-50자 이내로 작성하세요.
-
-문서 내용 샘플:
-{st.session_state.chunks[0].normalized_text[:500] if st.session_state.chunks else ''}
-
-설명:"""
+            sample_text = st.session_state.chunks[0].normalized_text[:500] if st.session_state.chunks else ""
+            desc_prompt = prompt_loader.get_description_prompt(sample_text=sample_text)
             desc_result = llm_service.generate(desc_prompt, model="gemini-2.5-flash")
             st.session_state.pdf_description = desc_result["text"]
 
@@ -280,44 +232,96 @@ def handle_pdf_delete(settings: dict) -> None:
     st.session_state.pdf_description = ""
 
 
-def _get_system_prompt(pdf_description: str = "") -> str:
-    base_prompt = """당신은 두 가지 모드로 동작합니다:
-1. 일반 모드: 간단한 질문, 일상 대화, 정보 조회
-2. 추론 모드: 복잡한 분석, 다단계 추론, 비교/평가, 수학적 계산
+def load_session_data(
+    session_id: str,
+    session_manager: SessionManager,
+    embed_repo: EmbeddingRepository,
+) -> None:
+    """세션 데이터를 로드하여 st.session_state에 설정 (Phase 02-6: SessionManager 사용)"""
+    # SessionManager로 히스토리 조회
+    history = session_manager.get_session_history(session_id)
+    metadata = session_manager.get_session_metadata(session_id)
 
-다음 상황에서는 반드시 switch_to_reasoning 툴을 호출하세요:
-- 여러 정보를 종합하여 결론을 도출해야 할 때
-- "왜", "어떻게", "비교해줘", "분석해줘" 등의 심층 질문
-- PDF 내용을 기반으로 추론이 필요할 때
-- 수학적 계산이나 논리적 단계가 필요할 때"""
+    if history:
+        # 히스토리를 Message 객체로 변환
+        messages = []
+        turn = 0
+        for item in history:
+            if item["role"] == "user":
+                turn += 1
+            msg = Message(
+                turn_id=turn,
+                role=item["role"],
+                content=item["content"],
+            )
+            messages.append(msg)
 
-    if pdf_description:
-        base_prompt += f"""
+        st.session_state.messages = messages
+        st.session_state.summary = metadata.get("summary", "")
+        st.session_state.summary_history = metadata.get("summary_history", [])
+        st.session_state.pdf_description = metadata.get("pdf_description", "")
+        # 토큰 사용량은 현재 세션에서 리셋 (SqliteSaver에 저장되지 않음)
+        st.session_state.token_usage = {"input": 0, "output": 0, "total": 0}
 
-[업로드된 PDF 정보]
-{pdf_description}
-사용자가 이 문서와 관련된 질문을 하면 search_pdf_knowledge 툴을 사용하세요."""
-
-    return base_prompt
+        # PDF 임베딩 로드
+        chunks, _ = embed_repo.load_chunks(session_id)
+        st.session_state.chunks = chunks
+    else:
+        # 새 세션 - 초기화
+        st.session_state.messages = []
+        st.session_state.token_usage = {"input": 0, "output": 0, "total": 0}
+        st.session_state.summary = ""
+        st.session_state.summary_history = []
+        st.session_state.chunks = []
+        st.session_state.pdf_description = ""
 
 
 def main():
     init_session_state()
 
-    settings = render_sidebar()
-
-    conv_repo = ConversationRepository(base_path=DATA_PATH)
+    # Phase 02-6: SessionManager + EmbeddingRepository만 사용
+    session_manager = SessionManager(db_path=DB_PATH)
     embed_repo = EmbeddingRepository(base_path=DATA_PATH)
 
-    tab1, tab2 = st.tabs(["💬 Chat", "📄 PDF Preprocessing"])
+    # 세션 변경 감지 및 처리
+    if st.session_state.get("session_changed"):
+        current_session = st.session_state.current_session
+
+        # Phase 02-6: 이전 세션 저장 불필요 - SqliteSaver가 자동 저장
+        # 새 세션/기존 세션 로드
+        load_session_data(current_session, session_manager, embed_repo)
+
+        # 플래그 초기화
+        st.session_state.previous_session_id = current_session
+        st.session_state.session_changed = False
+        st.session_state.new_session_created = False
+
+    # 저장된 세션 목록 로드 (앱 시작 시)
+    if "sessions_loaded" not in st.session_state:
+        saved_sessions = session_manager.list_sessions()
+        for sid in saved_sessions:
+            if sid not in st.session_state.sessions:
+                st.session_state.sessions.append(sid)
+        st.session_state.sessions_loaded = True
+
+    settings = render_sidebar()
+
+    tab0, tab1, tab2, tab3 = st.tabs(["📖 Overview", "📝 Prompts", "💬 Chat", "📄 PDF Preprocessing"])
+
+    with tab0:
+        render_overview_tab()
 
     with tab1:
-        render_chat_tab(
-            on_send=lambda msg: handle_chat_message(msg, settings, conv_repo, embed_repo),
-            messages=st.session_state.messages,
-        )
+        render_prompts_tab()
 
     with tab2:
+        render_chat_tab(
+            on_send=lambda msg: handle_chat_message(msg, settings, embed_repo),
+            messages=st.session_state.messages,
+            summary_history=st.session_state.summary_history,
+        )
+
+    with tab3:
         render_pdf_tab(
             on_upload=lambda f: handle_pdf_upload(f, settings),
             on_process=lambda step: handle_pdf_process(step, settings),

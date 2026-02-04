@@ -1,66 +1,9 @@
+"""Phase 02-6: Repository 테스트 (PDF 임베딩 전용)"""
 import pytest
 import tempfile
 import os
 from pathlib import Path
 import numpy as np
-
-
-class TestConversationRepository:
-    def test_save_and_load_messages(self, tmp_path):
-        from repository.conversation_repo import ConversationRepository
-        from domain.message import Message
-
-        repo = ConversationRepository(base_path=tmp_path)
-        session_id = "202601151430"
-
-        messages = [
-            Message(turn_id=1, role="user", content="Hello"),
-            Message(turn_id=1, role="assistant", content="Hi there!", input_tokens=5, output_tokens=3),
-        ]
-
-        repo.save_messages(session_id, messages)
-        loaded = repo.load_messages(session_id)
-
-        assert len(loaded) == 2
-        assert loaded[0].role == "user"
-        assert loaded[1].role == "assistant"
-
-    def test_append_message(self, tmp_path):
-        from repository.conversation_repo import ConversationRepository
-        from domain.message import Message
-
-        repo = ConversationRepository(base_path=tmp_path)
-        session_id = "202601151430"
-
-        msg1 = Message(turn_id=1, role="user", content="First")
-        msg2 = Message(turn_id=1, role="assistant", content="Response")
-
-        repo.append_message(session_id, msg1)
-        repo.append_message(session_id, msg2)
-
-        loaded = repo.load_messages(session_id)
-        assert len(loaded) == 2
-
-    def test_load_empty_returns_empty_list(self, tmp_path):
-        from repository.conversation_repo import ConversationRepository
-
-        repo = ConversationRepository(base_path=tmp_path)
-        loaded = repo.load_messages("nonexistent")
-
-        assert loaded == []
-
-    def test_clear_messages(self, tmp_path):
-        from repository.conversation_repo import ConversationRepository
-        from domain.message import Message
-
-        repo = ConversationRepository(base_path=tmp_path)
-        session_id = "202601151430"
-
-        repo.append_message(session_id, Message(turn_id=1, role="user", content="Test"))
-        repo.clear_messages(session_id)
-
-        loaded = repo.load_messages(session_id)
-        assert loaded == []
 
 
 class TestEmbeddingRepository:

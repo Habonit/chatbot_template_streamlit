@@ -64,6 +64,7 @@ dmypy.json
 # Runtime data
 data/sessions/
 data/uploads/
+data/langgraph.db
 
 # Logs
 *.log
