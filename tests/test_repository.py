@@ -162,6 +162,113 @@ class TestEmbeddingRepository:
         assert config == {}
 
 
+class TestSessionRepository:
+    """항목 7: SessionRepository 테스트 - 세션 메타데이터 저장/로드"""
+
+    def test_save_and_load_session(self, tmp_path):
+        """세션 저장 및 로드 테스트"""
+        from repository.session_repo import SessionRepository
+        from domain.session import Session
+
+        repo = SessionRepository(base_path=tmp_path)
+        session = Session(
+            session_id="202601151430",
+            total_turns=5,
+            current_summary="테스트 요약",
+            token_usage={"input": 1000, "output": 500, "total": 1500},
+            pdf_description="테스트 PDF 설명",
+        )
+
+        repo.save_session(session)
+        loaded = repo.load_session("202601151430")
+
+        assert loaded is not None
+        assert loaded.session_id == "202601151430"
+        assert loaded.total_turns == 5
+        assert loaded.current_summary == "테스트 요약"
+        assert loaded.token_usage["input"] == 1000
+        assert loaded.pdf_description == "테스트 PDF 설명"
+
+    def test_load_nonexistent_session(self, tmp_path):
+        """존재하지 않는 세션 로드 시 None 반환"""
+        from repository.session_repo import SessionRepository
+
+        repo = SessionRepository(base_path=tmp_path)
+        loaded = repo.load_session("nonexistent")
+
+        assert loaded is None
+
+    def test_list_sessions(self, tmp_path):
+        """세션 목록 조회 테스트"""
+        from repository.session_repo import SessionRepository
+        from domain.session import Session
+
+        repo = SessionRepository(base_path=tmp_path)
+
+        repo.save_session(Session(session_id="session1"))
+        repo.save_session(Session(session_id="session2"))
+        repo.save_session(Session(session_id="session3"))
+
+        sessions = repo.list_sessions()
+
+        assert len(sessions) == 3
+        assert "session1" in sessions
+        assert "session2" in sessions
+        assert "session3" in sessions
+
+    def test_list_sessions_empty(self, tmp_path):
+        """세션이 없을 때 빈 리스트 반환"""
+        from repository.session_repo import SessionRepository
+
+        repo = SessionRepository(base_path=tmp_path)
+        sessions = repo.list_sessions()
+
+        assert sessions == []
+
+    def test_delete_session(self, tmp_path):
+        """세션 삭제 테스트"""
+        from repository.session_repo import SessionRepository
+        from domain.session import Session
+
+        repo = SessionRepository(base_path=tmp_path)
+        repo.save_session(Session(session_id="202601151430"))
+
+        repo.delete_session("202601151430")
+        loaded = repo.load_session("202601151430")
+
+        assert loaded is None
+
+    def test_session_exists(self, tmp_path):
+        """세션 존재 여부 확인 테스트"""
+        from repository.session_repo import SessionRepository
+        from domain.session import Session
+
+        repo = SessionRepository(base_path=tmp_path)
+        repo.save_session(Session(session_id="202601151430"))
+
+        assert repo.exists("202601151430") is True
+        assert repo.exists("nonexistent") is False
+
+    def test_update_session(self, tmp_path):
+        """세션 업데이트 테스트"""
+        from repository.session_repo import SessionRepository
+        from domain.session import Session
+
+        repo = SessionRepository(base_path=tmp_path)
+
+        session = Session(session_id="202601151430", total_turns=0)
+        repo.save_session(session)
+
+        session.total_turns = 10
+        session.current_summary = "업데이트된 요약"
+        repo.save_session(session)
+
+        loaded = repo.load_session("202601151430")
+
+        assert loaded.total_turns == 10
+        assert loaded.current_summary == "업데이트된 요약"
+
+
 class TestPDFExtractor:
     def test_extract_text_from_pdf(self, tmp_path):
         from repository.pdf_extractor import PDFExtractor
