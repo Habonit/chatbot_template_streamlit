@@ -149,14 +149,21 @@ def handle_chat_message(
         max_output_tokens=settings.get("max_output_tokens", 8192),
     )
 
+    executed_function_calls = []
+
     if result.get("function_calls"):
+        prompt_loader = PromptLoader()
         for fc in result["function_calls"]:
+            executed_function_calls.append(fc)
             if fc["name"] == "switch_to_reasoning":
                 model_to_use = "gemini-2.5-pro"
+                cot_prompt = prompt_loader.get_cot_prompt(
+                    user_input=user_input,
+                    context=context,
+                )
                 result = llm_service.generate(
-                    full_prompt,
+                    cot_prompt,
                     model=model_to_use,
-                    tools=tool_manager.get_tools(),
                     temperature=settings["temperature"],
                     top_p=settings["top_p"],
                     max_output_tokens=settings.get("max_output_tokens", 8192),
@@ -164,7 +171,14 @@ def handle_chat_message(
                 break
             else:
                 tool_result = tool_manager.execute_tool(fc["name"], fc["args"])
-                enhanced_prompt = f"{full_prompt}\n\n[Tool Result: {fc['name']}]\n{tool_result}"
+                if fc["name"] == "web_search":
+                    tavily_prompt = prompt_loader.get_tavily_prompt(
+                        search_results=tool_result,
+                        user_query=user_input,
+                    )
+                    enhanced_prompt = f"{context}\n\n{tavily_prompt}"
+                else:
+                    enhanced_prompt = f"{full_prompt}\n\n[Tool Result: {fc['name']}]\n{tool_result}"
                 result = llm_service.generate(
                     enhanced_prompt,
                     model=model_to_use,
@@ -180,6 +194,7 @@ def handle_chat_message(
         input_tokens=result["input_tokens"],
         output_tokens=result["output_tokens"],
         model_used=result["model_used"],
+        function_calls=executed_function_calls,
     )
     st.session_state.messages.append(assistant_msg)
     conv_repo.append_message(session_id, assistant_msg)

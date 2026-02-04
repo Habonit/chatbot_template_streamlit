@@ -1,4 +1,5 @@
 import csv
+import json
 from pathlib import Path
 from domain.message import Message
 
@@ -17,11 +18,13 @@ class ConversationRepository:
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(
                 f,
-                fieldnames=["turn_id", "role", "content", "timestamp", "input_tokens", "output_tokens", "model_used"],
+                fieldnames=["turn_id", "role", "content", "timestamp", "input_tokens", "output_tokens", "model_used", "function_calls"],
             )
             writer.writeheader()
             for msg in messages:
-                writer.writerow(msg.to_dict())
+                row = msg.to_dict()
+                row["function_calls"] = json.dumps(row["function_calls"], ensure_ascii=False)
+                writer.writerow(row)
 
     def load_messages(self, session_id: str) -> list[Message]:
         csv_path = self._get_csv_path(session_id)
@@ -36,6 +39,7 @@ class ConversationRepository:
                 row["input_tokens"] = int(row["input_tokens"])
                 row["output_tokens"] = int(row["output_tokens"])
                 row["model_used"] = row["model_used"] if row["model_used"] else None
+                row["function_calls"] = json.loads(row.get("function_calls", "[]") or "[]")
                 messages.append(Message.from_dict(row))
         return messages
 
@@ -46,11 +50,13 @@ class ConversationRepository:
         with open(csv_path, "a", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(
                 f,
-                fieldnames=["turn_id", "role", "content", "timestamp", "input_tokens", "output_tokens", "model_used"],
+                fieldnames=["turn_id", "role", "content", "timestamp", "input_tokens", "output_tokens", "model_used", "function_calls"],
             )
             if not file_exists:
                 writer.writeheader()
-            writer.writerow(message.to_dict())
+            row = message.to_dict()
+            row["function_calls"] = json.dumps(row["function_calls"], ensure_ascii=False)
+            writer.writerow(row)
 
     def clear_messages(self, session_id: str) -> None:
         csv_path = self._get_csv_path(session_id)

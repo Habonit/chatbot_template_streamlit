@@ -19,6 +19,18 @@ def get_prompt_info() -> dict:
             "usage": "PDF가 업로드되고 처리된 세션에서만 사용됩니다.",
             "content": prompt_loader.load("system", "pdf_extension.txt"),
         },
+        "chain_of_thought": {
+            "title": "Chain of Thought Prompt",
+            "description": "복잡한 추론이 필요한 경우 단계별 사고 과정을 유도하는 프롬프트입니다.",
+            "usage": "switch_to_reasoning 툴이 호출되어 gemini-2.5-pro로 전환될 때 사용됩니다.",
+            "content": prompt_loader.load("system", "chain_of_thought.txt"),
+        },
+        "tavily_instruction": {
+            "title": "Tavily Search Instruction",
+            "description": "웹 검색 결과를 활용하여 답변을 작성하도록 지시하는 프롬프트입니다.",
+            "usage": "web_search 툴이 호출되어 Tavily 검색 결과를 LLM에 전달할 때 사용됩니다.",
+            "content": prompt_loader.load("search", "tavily_instruction.txt"),
+        },
         "summary_prompt": {
             "title": "Summary Prompt",
             "description": "대화 내용을 요약하기 위한 프롬프트입니다.",

@@ -66,6 +66,86 @@ class TestMessage:
         assert msg.turn_id == 1
         assert msg.content == "Test"
 
+    # === 항목 5: function_calls 필드 테스트 ===
+
+    def test_message_default_function_calls(self):
+        """function_calls 기본값 테스트 (빈 리스트)"""
+        from domain.message import Message
+
+        msg = Message(turn_id=1, role="user", content="Hello")
+
+        assert msg.function_calls == []
+
+    def test_message_with_function_calls(self):
+        """function_calls가 포함된 메시지 생성 테스트"""
+        from domain.message import Message
+
+        function_calls = [
+            {"name": "web_search", "args": {"query": "Python tutorial"}},
+            {"name": "search_pdf_knowledge", "args": {"query": "AI", "top_k": 5}},
+        ]
+        msg = Message(
+            turn_id=1,
+            role="assistant",
+            content="검색 결과입니다.",
+            function_calls=function_calls,
+        )
+
+        assert len(msg.function_calls) == 2
+        assert msg.function_calls[0]["name"] == "web_search"
+        assert msg.function_calls[1]["args"]["top_k"] == 5
+
+    def test_message_to_dict_with_function_calls(self):
+        """to_dict()에 function_calls 포함 테스트"""
+        from domain.message import Message
+
+        function_calls = [{"name": "switch_to_reasoning", "args": {}}]
+        msg = Message(
+            turn_id=1,
+            role="assistant",
+            content="분석 결과",
+            function_calls=function_calls,
+        )
+        data = msg.to_dict()
+
+        assert "function_calls" in data
+        assert len(data["function_calls"]) == 1
+        assert data["function_calls"][0]["name"] == "switch_to_reasoning"
+
+    def test_message_from_dict_with_function_calls(self):
+        """from_dict()에서 function_calls 파싱 테스트"""
+        from domain.message import Message
+
+        data = {
+            "turn_id": 1,
+            "role": "assistant",
+            "content": "결과",
+            "timestamp": "2026-01-15T14:30:00",
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "model_used": "gemini-2.5-flash",
+            "function_calls": [
+                {"name": "web_search", "args": {"query": "test"}}
+            ],
+        }
+        msg = Message.from_dict(data)
+
+        assert len(msg.function_calls) == 1
+        assert msg.function_calls[0]["name"] == "web_search"
+
+    def test_message_from_dict_missing_function_calls(self):
+        """from_dict()에서 function_calls 없을 때 기본값 테스트 (하위 호환성)"""
+        from domain.message import Message
+
+        data = {
+            "turn_id": 1,
+            "role": "user",
+            "content": "Test",
+        }
+        msg = Message.from_dict(data)
+
+        assert msg.function_calls == []
+
 
 class TestChunk:
     def test_create_chunk(self):

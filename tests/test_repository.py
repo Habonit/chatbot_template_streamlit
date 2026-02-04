@@ -62,6 +62,65 @@ class TestConversationRepository:
         loaded = repo.load_messages(session_id)
         assert loaded == []
 
+    # === 항목 5: function_calls 저장/로드 테스트 ===
+
+    def test_save_and_load_messages_with_function_calls(self, tmp_path):
+        """function_calls가 포함된 메시지 저장/로드 테스트"""
+        from repository.conversation_repo import ConversationRepository
+        from domain.message import Message
+
+        repo = ConversationRepository(base_path=tmp_path)
+        session_id = "202601151430"
+
+        function_calls = [
+            {"name": "web_search", "args": {"query": "Python tutorial"}},
+            {"name": "search_pdf_knowledge", "args": {"query": "AI", "top_k": 5}},
+        ]
+        messages = [
+            Message(turn_id=1, role="user", content="검색해줘"),
+            Message(
+                turn_id=1,
+                role="assistant",
+                content="검색 결과입니다.",
+                input_tokens=100,
+                output_tokens=50,
+                model_used="gemini-2.5-flash",
+                function_calls=function_calls,
+            ),
+        ]
+
+        repo.save_messages(session_id, messages)
+        loaded = repo.load_messages(session_id)
+
+        assert len(loaded) == 2
+        assert loaded[0].function_calls == []
+        assert len(loaded[1].function_calls) == 2
+        assert loaded[1].function_calls[0]["name"] == "web_search"
+        assert loaded[1].function_calls[1]["args"]["top_k"] == 5
+
+    def test_append_message_with_function_calls(self, tmp_path):
+        """function_calls가 포함된 메시지 append 테스트"""
+        from repository.conversation_repo import ConversationRepository
+        from domain.message import Message
+
+        repo = ConversationRepository(base_path=tmp_path)
+        session_id = "202601151430"
+
+        msg1 = Message(turn_id=1, role="user", content="추론해줘")
+        msg2 = Message(
+            turn_id=1,
+            role="assistant",
+            content="분석 결과입니다.",
+            function_calls=[{"name": "switch_to_reasoning", "args": {}}],
+        )
+
+        repo.append_message(session_id, msg1)
+        repo.append_message(session_id, msg2)
+
+        loaded = repo.load_messages(session_id)
+        assert len(loaded[1].function_calls) == 1
+        assert loaded[1].function_calls[0]["name"] == "switch_to_reasoning"
+
 
 class TestEmbeddingRepository:
     def test_save_and_load_chunks(self, tmp_path):

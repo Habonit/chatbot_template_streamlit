@@ -4,8 +4,8 @@ import io
 from domain.session import Session
 
 
-def _generate_csv_data(messages: list) -> str:
-    """대화 내역을 CSV 형식으로 변환"""
+def _generate_csv_data(messages: list) -> bytes:
+    """대화 내역을 CSV 형식으로 변환 (UTF-8 BOM 포함)"""
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["turn_id", "role", "content", "model_used", "input_tokens", "output_tokens"])
@@ -20,7 +20,7 @@ def _generate_csv_data(messages: list) -> str:
             getattr(msg, "output_tokens", ""),
         ])
 
-    return output.getvalue()
+    return output.getvalue().encode("utf-8-sig")
 
 
 def render_sidebar() -> dict:

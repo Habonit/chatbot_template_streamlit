@@ -142,3 +142,50 @@ class TestPromptLoader:
         prompt = loader.get_description_prompt(sample_text="Document content")
 
         assert "Describe: Document content" in prompt
+
+    def test_get_cot_prompt(self, tmp_path):
+        """Chain of Thought 프롬프트 가져오기"""
+        from service.prompt_loader import PromptLoader
+
+        # 테스트 프롬프트 파일 생성
+        prompt_dir = tmp_path / "system"
+        prompt_dir.mkdir()
+        cot_file = prompt_dir / "chain_of_thought.txt"
+        cot_file.write_text("CoT Prompt\n[사용자 질문]\n{user_input}\n[컨텍스트]\n{context}", encoding="utf-8")
+
+        loader = PromptLoader(base_path=tmp_path)
+        prompt = loader.get_cot_prompt(user_input="복잡한 질문입니다", context="이전 대화 내용")
+
+        assert "CoT Prompt" in prompt
+        assert "복잡한 질문입니다" in prompt
+        assert "이전 대화 내용" in prompt
+
+    def test_get_cot_prompt_without_context(self, tmp_path):
+        """컨텍스트 없이 CoT 프롬프트 가져오기"""
+        from service.prompt_loader import PromptLoader
+
+        prompt_dir = tmp_path / "system"
+        prompt_dir.mkdir()
+        cot_file = prompt_dir / "chain_of_thought.txt"
+        cot_file.write_text("CoT\n{user_input}\n{context}", encoding="utf-8")
+
+        loader = PromptLoader(base_path=tmp_path)
+        prompt = loader.get_cot_prompt(user_input="질문", context="")
+
+        assert "질문" in prompt
+
+    def test_get_tavily_prompt(self, tmp_path):
+        """Tavily 검색 프롬프트 가져오기"""
+        from service.prompt_loader import PromptLoader
+
+        # 테스트 프롬프트 파일 생성
+        prompt_dir = tmp_path / "search"
+        prompt_dir.mkdir()
+        tavily_file = prompt_dir / "tavily_instruction.txt"
+        tavily_file.write_text("Search Results:\n{search_results}\nQuery: {user_query}", encoding="utf-8")
+
+        loader = PromptLoader(base_path=tmp_path)
+        prompt = loader.get_tavily_prompt(search_results="검색 결과 내용", user_query="사용자 질문")
+
+        assert "검색 결과 내용" in prompt
+        assert "사용자 질문" in prompt

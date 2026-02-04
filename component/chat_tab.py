@@ -20,6 +20,10 @@ def render_chat_tab(
                     with st.expander("Details", expanded=False):
                         st.caption(f"Model: {msg.model_used}")
                         st.caption(f"Tokens: {msg.input_tokens} in / {msg.output_tokens} out")
+                        if msg.function_calls:
+                            st.markdown("**Tool Calls:**")
+                            for fc in msg.function_calls:
+                                st.code(f"{fc['name']}({fc.get('args', {})})")
 
     user_input = st.chat_input("메시지를 입력하세요...")
 
