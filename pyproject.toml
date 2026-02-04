@@ -5,13 +5,18 @@ requires-python = ">=3.11"
 
 dependencies = [
     "streamlit",
-    "google-genai",
     "pdfplumber",
     "faiss-cpu",
     "tavily-python",
     "pandas",
     "numpy",
     "python-dotenv",
+    "langchain",
+    "langgraph",
+    "langgraph-checkpoint-sqlite",
+    "langchain-google-genai",
+    "streamlit-mermaid",
+    "pytz",
 ]
 
 [project.optional-dependencies]

@@ -22,38 +22,7 @@ class Session:
         "total": 0,
     })
     pdf_description: str = ""
-
-    def add_turn(self) -> None:
-        self.total_turns += 1
-        self.last_updated = datetime.now().isoformat()
-
-    def update_summary(self, summary: str) -> None:
-        self.current_summary = summary
-        self.last_updated = datetime.now().isoformat()
-
-    def add_pdf(self, pdf_name: str) -> None:
-        if pdf_name not in self.pdf_files:
-            self.pdf_files.append(pdf_name)
-            self.last_updated = datetime.now().isoformat()
-
-    def update_token_usage(self, input_tokens: int, output_tokens: int) -> None:
-        self.token_usage["input"] += input_tokens
-        self.token_usage["output"] += output_tokens
-        self.token_usage["total"] = self.token_usage["input"] + self.token_usage["output"]
-        self.last_updated = datetime.now().isoformat()
-
-    def to_dict(self) -> dict:
-        return {
-            "session_id": self.session_id,
-            "created_at": self.created_at,
-            "last_updated": self.last_updated,
-            "total_turns": self.total_turns,
-            "current_summary": self.current_summary,
-            "pdf_files": self.pdf_files,
-            "settings": self.settings,
-            "token_usage": self.token_usage,
-            "pdf_description": self.pdf_description,
-        }
+    summary_history: list = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict) -> "Session":
@@ -67,6 +36,7 @@ class Session:
             settings=data.get("settings", {}),
             token_usage=data.get("token_usage", {"input": 0, "output": 0, "total": 0}),
             pdf_description=data.get("pdf_description", ""),
+            summary_history=data.get("summary_history", []),
         )
 
     @staticmethod

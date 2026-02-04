@@ -1,6 +1,79 @@
 import streamlit as st
 
 
+def get_langgraph_diagram() -> str:
+    """LangGraph 워크플로우 Mermaid 다이어그램 반환"""
+    return """
+graph TD
+    subgraph Input["입력"]
+        A["사용자 입력"]
+    end
+
+    subgraph ToolSelector["툴 선택"]
+        B["tool_selector"]
+    end
+
+    subgraph Tools["툴 실행"]
+        C["get_current_time"]
+        D["switch_to_reasoning"]
+        E["web_search"]
+        F["search_pdf_knowledge"]
+    end
+
+    subgraph Response["응답"]
+        G["response_generator"]
+        H["최종 응답"]
+    end
+
+    A --> B
+    B -->|시각| C
+    B -->|추론| D
+    B -->|검색| E
+    B -->|PDF| F
+    B -->|직접응답| G
+    C --> G
+    D --> G
+    E --> G
+    F --> G
+    G --> H
+"""
+
+
+def get_tool_info() -> list[dict]:
+    """툴 정보 목록 반환"""
+    return [
+        {
+            "name": "get_current_time",
+            "description": "현재 시각 (KST)",
+            "condition": "지금 몇 시, 오늘 날짜 등",
+        },
+        {
+            "name": "switch_to_reasoning",
+            "description": "추론 모드 전환 (gemini-2.5-pro)",
+            "condition": "복잡한 분석, 비교, 수학 계산",
+        },
+        {
+            "name": "web_search",
+            "description": "Tavily 웹 검색",
+            "condition": "최신 정보, 실시간 데이터 필요",
+        },
+        {
+            "name": "search_pdf_knowledge",
+            "description": "PDF RAG 검색",
+            "condition": "업로드된 PDF 관련 질문",
+        },
+    ]
+
+
+def get_response_length_diagram() -> str:
+    """응답 길이 규칙 Mermaid 다이어그램 반환"""
+    return """
+graph LR
+    A{"사용된 툴"} -->|"추론/검색/RAG"| B["상세 답변"]
+    A -->|"시각만 or 없음"| C["간결 답변"]
+"""
+
+
 def get_overview_content() -> dict:
     """Overview 탭에 표시할 콘텐츠 반환"""
     return {
@@ -98,6 +171,8 @@ PDF 전처리를 통해 문서의 내용을 벡터 임베딩으로 변환합니�
 
 def render_overview_tab() -> None:
     """Overview 탭 렌더링"""
+    from streamlit_mermaid import st_mermaid
+
     content = get_overview_content()
 
     st.title("Gemini Hybrid Chatbot")
@@ -112,6 +187,27 @@ def render_overview_tab() -> None:
     with st.expander("주요 기능", expanded=False):
         st.markdown(content["features"])
 
+    # Phase 02: LangGraph 워크플로우 다이어그램
+    with st.expander("LangGraph 워크플로우", expanded=False):
+        st.markdown("### 대화 처리 흐름")
+        st.markdown("사용자 입력이 어떻게 처리되어 최종 응답이 생성되는지 보여줍니다.")
+        st_mermaid(get_langgraph_diagram())
+
+    # Phase 02: 툴 콜링 구성
+    with st.expander("툴 콜링 구성", expanded=False):
+        st.markdown("### 사용 가능한 툴")
+        tool_info = get_tool_info()
+
+        # 테이블로 표시
+        st.markdown("| 툴 | 설명 | 호출 조건 |")
+        st.markdown("|-----|------|----------|")
+        for tool in tool_info:
+            st.markdown(f"| `{tool['name']}` | {tool['description']} | {tool['condition']} |")
+
+        st.divider()
+        st.markdown("### 응답 길이 규칙")
+        st_mermaid(get_response_length_diagram())
+
     with st.expander("설정 가이드", expanded=False):
         st.markdown(content["settings"])
 
@@ -119,4 +215,4 @@ def render_overview_tab() -> None:
         st.markdown(content["faq"])
 
     st.divider()
-    st.caption("버전: 1.0.0 | 마지막 업데이트: 2026-02-04")
+    st.caption("버전: 1.1.0 | 마지막 업데이트: 2026-02-04")

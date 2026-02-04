@@ -29,3 +29,7 @@ class EmbeddingService:
             config=types.EmbedContentConfig(output_dimensionality=self.output_dim),
         )
         return [np.array(e.values, dtype=np.float32) for e in response.embeddings]
+
+    def embed_query(self, text: str) -> np.ndarray:
+        """LangChain 인터페이스 호환용 - create_embedding의 alias"""
+        return self.create_embedding(text)

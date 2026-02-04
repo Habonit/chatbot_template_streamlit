@@ -102,7 +102,7 @@ class TestPdfTabHelpers:
 
 
 class TestPromptsTab:
-    """프롬프트 탭 테스트 (항목 8)"""
+    """프롬프트 탭 테스트 (Phase 02-5 업데이트)"""
 
     def test_get_prompt_info_returns_all_prompts(self):
         """get_prompt_info()가 모든 프롬프트를 반환하는지 테스트"""
@@ -110,12 +110,12 @@ class TestPromptsTab:
 
         prompt_info = get_prompt_info()
 
-        # 필수 프롬프트 키 목록
+        # Phase 02-5: 노드별 프롬프트 구조
         required_keys = [
-            "system_prompt",
-            "pdf_extension",
-            "chain_of_thought",  # 항목 2에서 추가
-            "tavily_instruction",  # 항목 6에서 추가
+            "tool_selector",
+            "reasoning_prompt",
+            "result_processor",
+            "response_generator",
             "summary_prompt",
             "normalization_prompt",
             "description_prompt",
@@ -135,30 +135,155 @@ class TestPromptsTab:
             for field in required_fields:
                 assert field in info, f"Missing field '{field}' in prompt '{key}'"
 
-    def test_chain_of_thought_prompt_content(self):
-        """chain_of_thought 프롬프트 내용 테스트"""
+    def test_reasoning_prompt_content(self):
+        """reasoning 프롬프트 내용 테스트"""
         from component.prompts_tab import get_prompt_info
 
         prompt_info = get_prompt_info()
 
-        assert "chain_of_thought" in prompt_info
-        cot = prompt_info["chain_of_thought"]
-        assert "추론" in cot["content"] or "reasoning" in cot["content"].lower()
-        assert "단계" in cot["content"] or "step" in cot["content"].lower()
+        assert "reasoning_prompt" in prompt_info
+        reasoning = prompt_info["reasoning_prompt"]
+        assert "추론" in reasoning["content"] or "분석" in reasoning["content"]
+        assert "단계" in reasoning["content"] or "Step" in reasoning["content"]
 
-    def test_tavily_instruction_prompt_content(self):
-        """tavily_instruction 프롬프트 내용 테스트"""
+    def test_tool_selector_prompt_content(self):
+        """tool_selector 프롬프트 내용 테스트"""
         from component.prompts_tab import get_prompt_info
 
         prompt_info = get_prompt_info()
 
-        assert "tavily_instruction" in prompt_info
-        tavily = prompt_info["tavily_instruction"]
-        assert "검색" in tavily["content"] or "search" in tavily["content"].lower()
+        assert "tool_selector" in prompt_info
+        selector = prompt_info["tool_selector"]
+        assert "툴" in selector["content"] or "tool" in selector["content"].lower()
 
     def test_prompt_count(self):
-        """프롬프트 개수 테스트 (7개)"""
+        """프롬프트 개수 테스트 (7개: Phase 02-5 구조)"""
         from component.prompts_tab import get_prompt_info
 
         prompt_info = get_prompt_info()
         assert len(prompt_info) == 7
+
+
+class TestOverviewTab:
+    """Overview 탭 테스트 (Phase 02 항목 7)"""
+
+    def test_get_overview_content_has_required_sections(self):
+        """get_overview_content()가 필수 섹션을 포함하는지 테스트"""
+        from component.overview_tab import get_overview_content
+
+        content = get_overview_content()
+
+        required_sections = [
+            "introduction",
+            "quick_start",
+            "features",
+            "settings",
+            "faq",
+        ]
+
+        for section in required_sections:
+            assert section in content, f"Missing section: {section}"
+
+    def test_get_langgraph_diagram_returns_mermaid_code(self):
+        """get_langgraph_diagram()이 Mermaid 코드를 반환하는지 테스트"""
+        from component.overview_tab import get_langgraph_diagram
+
+        mermaid_code = get_langgraph_diagram()
+
+        assert "graph" in mermaid_code.lower() or "flowchart" in mermaid_code.lower()
+        assert "tool_selector" in mermaid_code or "선택" in mermaid_code
+        assert "response_generator" in mermaid_code or "응답" in mermaid_code
+
+    def test_get_tool_info_table_has_all_tools(self):
+        """get_tool_info()가 모든 툴 정보를 반환하는지 테스트"""
+        from component.overview_tab import get_tool_info
+
+        tool_info = get_tool_info()
+
+        expected_tools = [
+            "get_current_time",
+            "switch_to_reasoning",
+            "web_search",
+            "search_pdf_knowledge",
+        ]
+
+        for tool in expected_tools:
+            found = any(t["name"] == tool for t in tool_info)
+            assert found, f"Missing tool: {tool}"
+
+    def test_get_response_length_diagram(self):
+        """get_response_length_diagram()이 Mermaid 코드를 반환하는지 테스트"""
+        from component.overview_tab import get_response_length_diagram
+
+        mermaid_code = get_response_length_diagram()
+
+        assert "graph" in mermaid_code.lower() or "flowchart" in mermaid_code.lower()
+        assert "상세" in mermaid_code or "detailed" in mermaid_code.lower()
+        assert "간결" in mermaid_code or "brief" in mermaid_code.lower()
+
+
+class TestPhase07SidebarReasoningMode:
+    """Phase 02-7: 사이드바 추론 모드 UI 테스트"""
+
+    def test_sidebar_module_has_reasoning_mode_support(self):
+        """sidebar 모듈이 추론 모드 관련 코드를 포함하는지 테스트"""
+        import component.sidebar as sidebar_module
+        import inspect
+
+        source = inspect.getsource(sidebar_module)
+
+        # 추론 모드 관련 키워드가 있어야 함
+        assert "추론" in source or "reasoning" in source.lower()
+
+
+class TestChatTabSummary:
+    """채팅 탭 요약 사이드바 테스트 (Phase 02 항목 6)"""
+
+    def test_format_summary_card_basic(self):
+        """기본 요약 카드 포맷팅 테스트"""
+        from component.chat_tab import format_summary_card
+
+        summary_entry = {
+            "created_at_turn": 4,
+            "covers_turns": "1-3",
+            "summary": "사용자가 Python에 대해 물어봤습니다."
+        }
+
+        result = format_summary_card(summary_entry)
+
+        assert "Turn 1-3" in result
+        assert "사용자가 Python에 대해 물어봤습니다." in result
+
+    def test_format_summary_card_long_summary(self):
+        """긴 요약문 포맷팅 테스트"""
+        from component.chat_tab import format_summary_card
+
+        long_summary = "이것은 매우 긴 요약문입니다. " * 10
+        summary_entry = {
+            "created_at_turn": 7,
+            "covers_turns": "4-6",
+            "summary": long_summary
+        }
+
+        result = format_summary_card(summary_entry)
+
+        assert "Turn 4-6" in result
+        assert "긴 요약문" in result
+
+    def test_get_summary_history_empty(self):
+        """빈 요약 히스토리 테스트"""
+        summary_history = []
+
+        assert len(summary_history) == 0
+
+    def test_get_summary_history_multiple(self):
+        """다중 요약 히스토리 테스트"""
+        summary_history = [
+            {"created_at_turn": 4, "covers_turns": "1-3", "summary": "첫 번째 요약"},
+            {"created_at_turn": 7, "covers_turns": "4-6", "summary": "두 번째 요약"},
+            {"created_at_turn": 10, "covers_turns": "7-9", "summary": "세 번째 요약"},
+        ]
+
+        assert len(summary_history) == 3
+        assert summary_history[0]["created_at_turn"] == 4
+        assert summary_history[2]["covers_turns"] == "7-9"

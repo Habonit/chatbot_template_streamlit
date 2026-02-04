@@ -1,3 +1,0 @@
-[업로드된 PDF 정보]
-{pdf_description}
-사용자가 이 문서와 관련된 질문을 하면 search_pdf_knowledge 툴을 사용하세요.

@@ -2,19 +2,24 @@ import pytest
 
 
 class TestPromptsTab:
+    """프롬프트 탭 테스트 (Phase 02-5 업데이트)"""
+
     def test_render_prompts_tab_exists(self):
         """프롬프트 탭 렌더링 함수 존재 확인"""
         from component.prompts_tab import render_prompts_tab
         assert callable(render_prompts_tab)
 
     def test_get_prompt_info_structure(self):
-        """프롬프트 정보 구조 확인"""
+        """프롬프트 정보 구조 확인 (Phase 02-5 노드별 프롬프트)"""
         from component.prompts_tab import get_prompt_info
 
         info = get_prompt_info()
 
-        # 필수 프롬프트 섹션 확인
-        assert "system_prompt" in info
+        # Phase 02-5: 노드별 프롬프트 구조
+        assert "tool_selector" in info
+        assert "reasoning_prompt" in info
+        assert "result_processor" in info
+        assert "response_generator" in info
         assert "summary_prompt" in info
         assert "normalization_prompt" in info
         assert "description_prompt" in info
