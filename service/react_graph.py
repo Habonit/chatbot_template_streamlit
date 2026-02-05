@@ -341,10 +341,17 @@ class ReactGraphBuilder:
                 "summary_history": summary_history,
             }
 
-        # 전체 턴 범위 및 제외 턴 계산
-        start_turn = turns_to_summarize[0]
+        # Phase 03-3-3: 전체 턴 범위 및 제외 턴 계산
+        # 이전 요약이 있으면 그 다음 턴부터, 없으면 1턴부터
+        if summary_history:
+            last_summary = summary_history[-1]
+            last_summarized_turns = last_summary.get("turns", [])
+            first_turn = max(last_summarized_turns) + 1 if last_summarized_turns else 1
+        else:
+            first_turn = 1
+
         end_turn = turns_to_summarize[-1]
-        all_turns_in_range = list(range(start_turn, end_turn + 1))
+        all_turns_in_range = list(range(first_turn, end_turn + 1))
         excluded_turns = [t for t in all_turns_in_range if t not in turns_to_summarize]
 
         # Phase 03-3-2: turn_id 기반 메시지 추출

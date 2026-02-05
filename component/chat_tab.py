@@ -6,9 +6,11 @@ def format_summary_card(summary_entry: dict) -> str:
     """요약 히스토리 엔트리를 마크다운 카드 형식으로 포맷팅
 
     Phase 03-3-2: excluded_turns 표시 지원
+    Phase 03-3-3: Turn 1 제외 표시 수정
     """
     turns = summary_entry.get("turns", [])
     excluded = summary_entry.get("excluded_turns", [])
+    summarized = summary_entry.get("summarized_turns", turns)  # 실제 요약된 턴
 
     # 턴 범위 표시: "Turn 1-3" 또는 "Turn 1, 3, 4"
     if turns:
@@ -22,9 +24,9 @@ def format_summary_card(summary_entry: dict) -> str:
 
     summary = summary_entry.get("summary", "")
 
-    # excluded 턴이 있으면 표시
+    # excluded 턴이 있으면 표시 (casual 턴)
     if excluded:
-        excluded_str = f"\n*({', '.join(map(str, excluded))}턴 제외)*"
+        excluded_str = f"\n*({', '.join(map(str, sorted(excluded)))}턴 casual)*"
     else:
         excluded_str = ""
 
@@ -35,8 +37,18 @@ def render_chat_tab(
     on_send: callable,
     messages: list[Message],
     summary_history: list[dict] = None,
+    turn_count: int = None,
 ) -> None:
-    st.header("Chat")
+    # 턴 수 계산 (전달되지 않은 경우 user 메시지 수로 계산)
+    if turn_count is None:
+        turn_count = len([m for m in messages if m.role == "user"])
+
+    # 헤더 + 턴 번호 표시
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        st.header("Chat")
+    with col2:
+        st.metric("Turn", turn_count)
 
     # 2-Column 레이아웃 (3:1 비율)
     if summary_history is None:

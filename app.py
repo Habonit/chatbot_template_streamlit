@@ -333,6 +333,7 @@ def main():
             on_send=lambda msg: handle_chat_message(msg, settings, embed_repo),
             messages=st.session_state.messages,
             summary_history=st.session_state.summary_history,
+            turn_count=get_turn_count(st.session_state.messages),
         )
 
     with tab3:

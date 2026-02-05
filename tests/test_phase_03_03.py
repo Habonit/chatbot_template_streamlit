@@ -145,7 +145,7 @@ class TestSummaryPromptImprovement:
         from prompt.summary.summary_generator import SUMMARY_GENERATOR_PROMPT
 
         assert "최소" in SUMMARY_GENERATOR_PROMPT
-        assert "100자" in SUMMARY_GENERATOR_PROMPT
+        assert "150자" in SUMMARY_GENERATOR_PROMPT  # Phase 03-3-3: 100자 → 150자
 
     def test_prompt_has_examples(self):
         """프롬프트에 예시 포함"""
@@ -191,3 +191,64 @@ class TestRequestPatterns:
         assert detect_reasoning_need("몇월이야") != "casual"
         assert detect_reasoning_need("몇년도야") != "casual"
         assert detect_reasoning_need("몇 개야") != "casual"
+
+
+class TestExcludedTurnsCalculation:
+    """Phase 03-3-3: excluded_turns 계산 테스트"""
+
+    def test_turn1_included_in_excluded_when_casual(self):
+        """Turn 1이 casual일 때 excluded_turns에 포함"""
+        from component.chat_tab import format_summary_card
+
+        # 시뮬레이션: Turn 1이 casual, Turn 2-4가 normal
+        # 요약 범위는 Turn 1-4, 실제 요약된 턴은 [2, 3, 4]
+        summary_entry = {
+            "turns": [1, 2, 3, 4],
+            "summarized_turns": [2, 3, 4],
+            "excluded_turns": [1],  # Turn 1이 casual
+            "summary": "테스트 요약입니다.",
+        }
+        result = format_summary_card(summary_entry)
+        assert "Turn 1-4" in result
+        assert "1턴 casual" in result
+
+    def test_multiple_excluded_turns(self):
+        """여러 턴이 제외된 경우"""
+        from component.chat_tab import format_summary_card
+
+        summary_entry = {
+            "turns": [1, 2, 3, 4, 5],
+            "summarized_turns": [2, 4, 5],
+            "excluded_turns": [1, 3],  # Turn 1, 3이 casual
+            "summary": "테스트 요약입니다.",
+        }
+        result = format_summary_card(summary_entry)
+        assert "Turn 1-5" in result
+        assert "1, 3턴 casual" in result
+
+    def test_no_excluded_turns(self):
+        """제외된 턴이 없는 경우"""
+        from component.chat_tab import format_summary_card
+
+        summary_entry = {
+            "turns": [1, 2, 3],
+            "summarized_turns": [1, 2, 3],
+            "excluded_turns": [],
+            "summary": "테스트 요약입니다.",
+        }
+        result = format_summary_card(summary_entry)
+        assert "Turn 1-3" in result
+        assert "casual" not in result
+
+
+class TestTurnNumberDisplay:
+    """Phase 03-3-3: 턴 번호 표시 테스트"""
+
+    def test_render_chat_tab_has_turn_count_param(self):
+        """render_chat_tab이 turn_count 파라미터를 받음"""
+        from component.chat_tab import render_chat_tab
+        import inspect
+
+        sig = inspect.signature(render_chat_tab)
+        params = list(sig.parameters.keys())
+        assert "turn_count" in params
