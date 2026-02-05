@@ -98,6 +98,16 @@ def render_sidebar() -> dict:
             help="최대 출력 토큰 수 (Gemini 2.5: 최대 65,536)",
         )
 
+        # Phase 03-1: seed 파라미터 추가
+        seed = st.number_input(
+            "Seed (재현성)",
+            min_value=-1,
+            max_value=2147483647,
+            value=-1,
+            step=1,
+            help="응답 재현성 제어. -1은 랜덤, 양수는 고정 시드",
+        )
+
         st.divider()
 
         # Phase 02-7: 추론 모드 설정
@@ -141,6 +151,16 @@ def render_sidebar() -> dict:
             max_value=10,
             value=5,
             help="ReAct 에이전트가 툴을 호출할 수 있는 최대 횟수",
+        )
+
+        # Phase 03-3: 요약 압축률 설정
+        compression_rate = st.slider(
+            "요약 압축률",
+            min_value=0.1,
+            max_value=0.5,
+            value=0.3,
+            step=0.05,
+            help="낮을수록 짧게 요약, 높을수록 상세하게 요약 (3턴마다 적용)",
         )
 
     st.sidebar.divider()
@@ -216,6 +236,7 @@ def render_sidebar() -> dict:
         "temperature": temperature,
         "top_p": top_p,
         "max_output_tokens": max_output_tokens,
+        "seed": seed if seed >= 0 else None,  # Phase 03-1: -1은 None (랜덤)
         "search_enabled": search_enabled,
         "search_depth": search_depth,
         "max_results": max_results,
@@ -224,4 +245,6 @@ def render_sidebar() -> dict:
         # Phase 02-7: 추론 모드 설정
         "reasoning_mode": reasoning_mode,
         "auto_reasoning": auto_reasoning,
+        # Phase 03-3: 요약 압축률
+        "compression_rate": compression_rate,
     }

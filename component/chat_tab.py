@@ -3,10 +3,32 @@ from domain.message import Message
 
 
 def format_summary_card(summary_entry: dict) -> str:
-    """요약 히스토리 엔트리를 마크다운 카드 형식으로 포맷팅"""
-    covers_turns = summary_entry.get("covers_turns", "?")
+    """요약 히스토리 엔트리를 마크다운 카드 형식으로 포맷팅
+
+    Phase 03-3-2: excluded_turns 표시 지원
+    """
+    turns = summary_entry.get("turns", [])
+    excluded = summary_entry.get("excluded_turns", [])
+
+    # 턴 범위 표시: "Turn 1-3" 또는 "Turn 1, 3, 4"
+    if turns:
+        if len(turns) > 1 and turns == list(range(min(turns), max(turns) + 1)):
+            # 연속 범위
+            turns_str = f"{min(turns)}-{max(turns)}"
+        else:
+            turns_str = ", ".join(str(t) for t in turns)
+    else:
+        turns_str = "?"
+
     summary = summary_entry.get("summary", "")
-    return f"**Turn {covers_turns}**\n\n{summary}"
+
+    # excluded 턴이 있으면 표시
+    if excluded:
+        excluded_str = f"\n*({', '.join(map(str, excluded))}턴 제외)*"
+    else:
+        excluded_str = ""
+
+    return f"**Turn {turns_str}**{excluded_str}\n\n{summary}"
 
 
 def render_chat_tab(

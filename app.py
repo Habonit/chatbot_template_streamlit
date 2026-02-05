@@ -54,6 +54,9 @@ def init_session_state():
         st.session_state.chunks = []
     if "pdf_description" not in st.session_state:
         st.session_state.pdf_description = ""
+    # Phase 03-3-2: normal 턴 ID 목록
+    if "normal_turn_ids" not in st.session_state:
+        st.session_state.normal_turn_ids = []
 
 
 def get_turn_count(messages: list[Message]) -> int:
@@ -105,6 +108,9 @@ def handle_chat_message(
         api_key=settings["gemini_api_key"],
         model=settings.get("model", "gemini-2.0-flash"),
         temperature=settings.get("temperature", 0.7),
+        top_p=settings.get("top_p", 0.9),
+        max_output_tokens=settings.get("max_output_tokens", 8192),
+        seed=settings.get("seed"),
         max_iterations=settings.get("max_iterations", 5),
         search_service=search_service,
         embedding_service=embedding_service,
@@ -119,6 +125,8 @@ def handle_chat_message(
         pdf_description=st.session_state.pdf_description,
         turn_count=turn_count,
         summary_history=st.session_state.summary_history,
+        compression_rate=settings.get("compression_rate", 0.3),
+        normal_turn_ids=st.session_state.normal_turn_ids,  # Phase 03-3-2
     )
 
     # 그래프에서 생성된 요약 업데이트
@@ -126,6 +134,9 @@ def handle_chat_message(
         st.session_state.summary = result["summary"]
     if result.get("summary_history"):
         st.session_state.summary_history = result["summary_history"]
+    # Phase 03-3-2: normal_turn_ids 업데이트
+    if "normal_turn_ids" in result:
+        st.session_state.normal_turn_ids = result["normal_turn_ids"]
 
     # 어시스턴트 메시지를 st.session_state에 저장 (UI 표시용)
     function_calls = [{"name": t, "args": {}} for t in result.get("tool_history", [])]
@@ -260,6 +271,8 @@ def load_session_data(
         st.session_state.summary = metadata.get("summary", "")
         st.session_state.summary_history = metadata.get("summary_history", [])
         st.session_state.pdf_description = metadata.get("pdf_description", "")
+        # Phase 03-3-2: normal_turn_ids 복원
+        st.session_state.normal_turn_ids = metadata.get("normal_turn_ids", [])
         # 토큰 사용량은 현재 세션에서 리셋 (SqliteSaver에 저장되지 않음)
         st.session_state.token_usage = {"input": 0, "output": 0, "total": 0}
 
@@ -273,6 +286,7 @@ def load_session_data(
         st.session_state.summary = ""
         st.session_state.summary_history = []
         st.session_state.chunks = []
+        st.session_state.normal_turn_ids = []  # Phase 03-3-2
         st.session_state.pdf_description = ""
 
 

@@ -33,10 +33,9 @@ RESULT_PROCESSOR_PROMPT = """
 {tool_results}
 - 반복 횟수: {iteration}/{max_iterations}
 
-## 출력 형식
+## 출력 지시
 
-반드시 아래 JSON 형식으로만 출력하세요:
-{{"summary": "현재까지 수집된 정보 요약 (2-3문장)", "needs_more_tools": true 또는 false, "reason": "판단 이유"}}
+수집된 정보가 충분한지 판단하고, 추가 조사가 필요한지 결정하세요.
 """.strip()
 
 
