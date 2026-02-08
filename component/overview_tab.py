@@ -2,41 +2,98 @@ import streamlit as st
 
 
 def get_langgraph_diagram() -> str:
-    """LangGraph 워크플로우 Mermaid 다이어그램 반환"""
+    """LangGraph 워크플로우 마크다운 반환"""
     return """
-graph TD
-    subgraph Input["입력"]
-        A["사용자 입력"]
-    end
+| 순서 | 노드 | 역할 | 다음 단계 |
+|:---:|------|------|----------|
+| 1 | **START** | 그래프 진입점 | → summary_node |
+| 2 | **summary_node** | Context Compression (3턴마다 대화 요약) | → llm_node |
+| 3 | **llm_node** | LLM 추론 + `bind_tools()` | → tools_condition 분기 |
+| 4a | **tool_node** | ToolNode 실행 (도구 호출 시) | → llm_node (재추론) |
+| 4b | **END** | 그래프 종료 (도구 호출 없을 시) | - |
 
-    subgraph ToolSelector["툴 선택"]
-        B["tool_selector"]
-    end
-
-    subgraph Tools["툴 실행"]
-        C["get_current_time"]
-        D["switch_to_reasoning"]
-        E["web_search"]
-        F["search_pdf_knowledge"]
-    end
-
-    subgraph Response["응답"]
-        G["response_generator"]
-        H["최종 응답"]
-    end
-
-    A --> B
-    B -->|시각| C
-    B -->|추론| D
-    B -->|검색| E
-    B -->|PDF| F
-    B -->|직접응답| G
-    C --> G
-    D --> G
-    E --> G
-    F --> G
-    G --> H
+> **tools_condition**: llm_node의 응답에 tool_calls가 포함되면 → tool_node, 없으면 → END
 """
+
+
+def get_architecture_diagram() -> str:
+    """앱 전체 아키텍처 Mermaid 다이어그램 반환"""
+    return """
+graph TB
+    subgraph UI["Streamlit UI"]
+        overview["Overview Tab"]
+        prompts["Prompts Tab"]
+        chat["Chat Tab"]
+        pdf["PDF Tab"]
+        sidebar["Sidebar Settings"]
+    end
+    subgraph Service["Service Layer"]
+        graph_builder["ReactGraphBuilder"]
+        reasoning_detector["ReasoningDetector"]
+        session_mgr["SessionManager"]
+        llm_service["LLMService"]
+        rag_service["RAGService"]
+    end
+    subgraph LangGraph["LangGraph ReAct Graph"]
+        summary_node["summary_node"] --> llm_node["llm_node"]
+        llm_node -->|tools_condition| tool_node["tool_node"]
+        tool_node --> llm_node
+        llm_node --> END_NODE["END"]
+    end
+    chat --> graph_builder
+    sidebar --> graph_builder
+    graph_builder --> LangGraph
+    pdf --> rag_service
+    chat --> reasoning_detector
+"""
+
+
+def get_concept_cards() -> list[dict]:
+    """핵심 개념 카드 목록 반환"""
+    return [
+        {
+            "title": "ReAct 패턴",
+            "emoji": "🔄",
+            "description": "LLM이 Reasoning + Acting을 반복하는 에이전트 패턴입니다.",
+            "detail": "이 앱에서 `llm_node → tool_node → llm_node` 루프가 ReAct 패턴을 구현합니다. LLM이 도구 호출이 필요하다고 판단하면 `tool_node`로 라우팅되고, 도구 결과를 받아 다시 추론합니다. `tools_condition`이 이 분기를 제어합니다.",
+        },
+        {
+            "title": "Tool Calling",
+            "emoji": "🔧",
+            "description": "`bind_tools()` + `ToolNode` + `tools_condition`으로 구현된 LangChain 표준 Tool Calling 패턴입니다.",
+            "detail": "4개 도구가 LLM에 바인딩됩니다:\n- `get_current_time`: 현재 시각 (KST)\n- `switch_to_reasoning`: 추론 모드 전환 (gemini-2.5-pro)\n- `web_search`: Tavily 웹 검색\n- `search_pdf_knowledge`: PDF RAG 검색\n\nLLM은 자동으로 적합한 도구를 선택하여 호출합니다.",
+        },
+        {
+            "title": "Context Compression",
+            "emoji": "📋",
+            "description": "`summary_node`에서 3턴마다 대화를 요약하여 컨텍스트를 압축합니다.",
+            "detail": "normal 턴 4, 7, 10번째에서 직전 3개 normal 턴을 요약합니다. `compression_rate` 설정으로 요약 길이를 조절할 수 있습니다 (0.1~0.5). casual 턴은 요약 카운트에서 제외됩니다.",
+        },
+        {
+            "title": "Streaming",
+            "emoji": "⚡",
+            "description": "`stream_mode=\"messages\"`를 사용한 실시간 토큰 스트리밍입니다.",
+            "detail": "5종류의 스트리밍 이벤트:\n- `token`: 텍스트 토큰\n- `tool_call`: 도구 호출 시작\n- `tool_result`: 도구 실행 결과\n- `thought`: 사고 과정 (thinking mode)\n- `done`: 스트리밍 완료 + 메타데이터",
+        },
+        {
+            "title": "Thinking Mode",
+            "emoji": "🧠",
+            "description": "`thinking_budget` 설정으로 모델의 사고 과정을 활성화합니다.",
+            "detail": "지원 모델: gemini-2.5-pro, gemini-2.5-flash\n`include_thoughts=True` 시 사고 과정이 응답에 포함됩니다. UI에서 expander로 사고 과정을 확인할 수 있습니다.",
+        },
+        {
+            "title": "Casual Detection",
+            "emoji": "💬",
+            "description": "`ReasoningDetector`가 패턴 매칭으로 casual/normal/reasoning 모드를 분류합니다.",
+            "detail": "casual 모드는 그래프를 거치지 않고 직접 LLM 호출합니다 (casual_bypass). 인사, 감탄사, 짧은 입력 등이 casual로 분류됩니다. reasoning 모드는 복잡한 분석/비교/수학 등에 활성화됩니다.",
+        },
+        {
+            "title": "Session & Checkpointing",
+            "emoji": "💾",
+            "description": "`SqliteSaver`로 그래프 상태를 자동 저장하고 세션을 관리합니다.",
+            "detail": "LangGraph의 `SqliteSaver` checkpointer가 매 그래프 실행 시 상태를 자동 저장합니다. `thread_id` 기반으로 세션이 분리되며, 세션 전환 시 이전 대화를 복원할 수 있습니다.",
+        },
+    ]
 
 
 def get_tool_info() -> list[dict]:
@@ -46,23 +103,46 @@ def get_tool_info() -> list[dict]:
             "name": "get_current_time",
             "description": "현재 시각 (KST)",
             "condition": "지금 몇 시, 오늘 날짜 등",
+            "bind_method": "bind_tools()",
         },
         {
             "name": "switch_to_reasoning",
             "description": "추론 모드 전환 (gemini-2.5-pro)",
             "condition": "복잡한 분석, 비교, 수학 계산",
+            "bind_method": "bind_tools()",
         },
         {
             "name": "web_search",
             "description": "Tavily 웹 검색",
             "condition": "최신 정보, 실시간 데이터 필요",
+            "bind_method": "bind_tools()",
         },
         {
             "name": "search_pdf_knowledge",
             "description": "PDF RAG 검색",
             "condition": "업로드된 PDF 관련 질문",
+            "bind_method": "bind_tools()",
         },
     ]
+
+
+def get_tool_calling_markdown() -> str:
+    """툴 콜링 구성 마크다운 반환"""
+    tool_info = get_tool_info()
+    lines = [
+        "| 툴 | 설명 | 호출 조건 | 바인딩 |",
+        "|-----|------|----------|--------|",
+    ]
+    for tool in tool_info:
+        lines.append(
+            f"| `{tool['name']}` | {tool['description']} | {tool['condition']} | `{tool['bind_method']}` |"
+        )
+    lines.append("")
+    lines.append(
+        "> LLM이 사용자 입력을 분석하여 적합한 도구를 **자동 선택**합니다. "
+        "`llm_node`에서 `bind_tools()`로 바인딩된 도구 중 하나 이상이 호출되면 `tools_condition`이 `tool_node`로 라우팅합니다."
+    )
+    return "\n".join(lines)
 
 
 def get_response_length_diagram() -> str:
@@ -80,13 +160,16 @@ def get_overview_content() -> dict:
         "introduction": """
 ## Gemini Hybrid Chatbot
 
-Gemini Hybrid Chatbot은 Google의 Gemini API를 활용한 하이브리드 AI 챗봇입니다.
+이 앱은 **현대 AI 챗봇의 핵심 개념들**이 어떻게 구현되고 동작하는지 교육적으로 보여주는 데모입니다.
 
-### 주요 특징
-- **하이브리드 AI**: 일반 대화는 빠른 Flash 모델, 복잡한 추론은 Pro 모델을 자동으로 선택
-- **RAG (Retrieval-Augmented Generation)**: PDF 문서를 업로드하여 문서 기반 질의응답 가능
-- **웹 검색 통합**: Tavily API를 통한 실시간 웹 검색 지원
-- **세션 관리**: 대화 히스토리를 세션별로 분리하여 관리
+### 적용된 핵심 기술
+- **ReAct 패턴**: LLM의 Reasoning + Acting 반복으로 복잡한 질문 처리
+- **Tool Calling**: LangChain 표준 패턴으로 4개 도구 자동 선택 및 실행
+- **Context Compression**: 3턴마다 대화 요약으로 장기 대화 지원
+- **Streaming**: 실시간 토큰 스트리밍으로 응답 대기 시간 최소화
+- **Thinking Mode**: 모델의 사고 과정 시각화
+- **Casual Detection**: 입력 유형별 자동 모드 분류 (casual/normal/reasoning)
+- **Session Checkpointing**: SqliteSaver 기반 자동 상태 저장
 """,
         "quick_start": """
 ## 시작하기
@@ -176,37 +259,42 @@ def render_overview_tab() -> None:
     content = get_overview_content()
 
     st.title("Gemini Hybrid Chatbot")
-    st.caption("하이브리드 AI 챗봇 사용 가이드")
+    st.caption("AI 챗봇 핵심 개념 교육 데모")
 
+    # 1. 소개
     with st.expander("앱 소개", expanded=True):
         st.markdown(content["introduction"])
 
+    # 2. 아키텍처 다이어그램
+    with st.expander("🏗️ 앱 아키텍처", expanded=False):
+        st.markdown("### 전체 구조")
+        st.markdown("Streamlit UI → Service Layer → LangGraph ReAct Graph")
+        st_mermaid(get_architecture_diagram())
+
+    # 3. 핵심 개념 카드
+    with st.expander("📚 핵심 개념", expanded=False):
+        st.markdown("### AI 챗봇 핵심 기술")
+        cards = get_concept_cards()
+        for card in cards:
+            with st.container(border=True):
+                st.markdown(f"#### {card['emoji']} {card['title']}")
+                st.markdown(card["description"])
+                st.caption(card["detail"])
+
+    # 4. LangGraph 워크플로우
+    with st.expander("🔄 LangGraph 워크플로우", expanded=False):
+        st.markdown("### ReAct 그래프 실행 흐름")
+        st.markdown("사용자 입력 → summary_node → llm_node → (tool_node ↔ llm_node) → END")
+        st.markdown(get_langgraph_diagram())
+
+    # 5. 툴 콜링 구성
+    with st.expander("🔧 툴 콜링 구성", expanded=False):
+        st.markdown("### 사용 가능한 툴")
+        st.markdown(get_tool_calling_markdown())
+
+    # 6. 기존 섹션 유지
     with st.expander("시작하기 (Quick Start)", expanded=False):
         st.markdown(content["quick_start"])
-
-    with st.expander("주요 기능", expanded=False):
-        st.markdown(content["features"])
-
-    # Phase 02: LangGraph 워크플로우 다이어그램
-    with st.expander("LangGraph 워크플로우", expanded=False):
-        st.markdown("### 대화 처리 흐름")
-        st.markdown("사용자 입력이 어떻게 처리되어 최종 응답이 생성되는지 보여줍니다.")
-        st_mermaid(get_langgraph_diagram())
-
-    # Phase 02: 툴 콜링 구성
-    with st.expander("툴 콜링 구성", expanded=False):
-        st.markdown("### 사용 가능한 툴")
-        tool_info = get_tool_info()
-
-        # 테이블로 표시
-        st.markdown("| 툴 | 설명 | 호출 조건 |")
-        st.markdown("|-----|------|----------|")
-        for tool in tool_info:
-            st.markdown(f"| `{tool['name']}` | {tool['description']} | {tool['condition']} |")
-
-        st.divider()
-        st.markdown("### 응답 길이 규칙")
-        st_mermaid(get_response_length_diagram())
 
     with st.expander("설정 가이드", expanded=False):
         st.markdown(content["settings"])
@@ -215,4 +303,4 @@ def render_overview_tab() -> None:
         st.markdown(content["faq"])
 
     st.divider()
-    st.caption("버전: 1.1.0 | 마지막 업데이트: 2026-02-04")
+    st.caption("버전: 2.0.0 | Phase 04 | 마지막 업데이트: 2026-02-07")

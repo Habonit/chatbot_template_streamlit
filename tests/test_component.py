@@ -184,15 +184,16 @@ class TestOverviewTab:
         for section in required_sections:
             assert section in content, f"Missing section: {section}"
 
-    def test_get_langgraph_diagram_returns_mermaid_code(self):
-        """get_langgraph_diagram()이 Mermaid 코드를 반환하는지 테스트"""
+    def test_get_langgraph_diagram_returns_markdown(self):
+        """get_langgraph_diagram()이 마크다운을 반환하는지 테스트"""
         from component.overview_tab import get_langgraph_diagram
 
-        mermaid_code = get_langgraph_diagram()
+        markdown = get_langgraph_diagram()
 
-        assert "graph" in mermaid_code.lower() or "flowchart" in mermaid_code.lower()
-        assert "tool_selector" in mermaid_code or "선택" in mermaid_code
-        assert "response_generator" in mermaid_code or "응답" in mermaid_code
+        assert "summary_node" in markdown
+        assert "llm_node" in markdown
+        assert "tool_node" in markdown
+        assert "tools_condition" in markdown
 
     def test_get_tool_info_table_has_all_tools(self):
         """get_tool_info()가 모든 툴 정보를 반환하는지 테스트"""
@@ -240,17 +241,18 @@ class TestChatTabSummary:
     """채팅 탭 요약 사이드바 테스트 (Phase 02 항목 6)"""
 
     def test_format_summary_card_basic(self):
-        """기본 요약 카드 포맷팅 테스트"""
+        """기본 요약 카드 포맷팅 테스트 (연속 범위는 1-3 형식)"""
         from component.chat_tab import format_summary_card
 
         summary_entry = {
             "created_at_turn": 4,
-            "covers_turns": "1-3",
+            "turns": [1, 2, 3],
             "summary": "사용자가 Python에 대해 물어봤습니다."
         }
 
         result = format_summary_card(summary_entry)
 
+        # Phase 03-3-2: 연속 범위는 "1-3" 형식으로 표시
         assert "Turn 1-3" in result
         assert "사용자가 Python에 대해 물어봤습니다." in result
 
@@ -261,14 +263,46 @@ class TestChatTabSummary:
         long_summary = "이것은 매우 긴 요약문입니다. " * 10
         summary_entry = {
             "created_at_turn": 7,
-            "covers_turns": "4-6",
+            "turns": [4, 5, 6],
             "summary": long_summary
         }
 
         result = format_summary_card(summary_entry)
 
+        # Phase 03-3-2: 연속 범위는 "4-6" 형식으로 표시
         assert "Turn 4-6" in result
         assert "긴 요약문" in result
+
+    def test_format_summary_card_non_consecutive(self):
+        """비연속 턴 요약 카드 테스트 (Phase 03-3-2)"""
+        from component.chat_tab import format_summary_card
+
+        summary_entry = {
+            "turns": [1, 3, 4],  # Turn 2 제외 (casual)
+            "excluded_turns": [2],
+            "summary": "비연속 턴 요약"
+        }
+
+        result = format_summary_card(summary_entry)
+
+        # 비연속이므로 "1, 3, 4" 형식
+        assert "Turn 1, 3, 4" in result
+        assert "2턴 제외" in result
+
+    def test_format_summary_card_with_excluded_turns(self):
+        """excluded_turns 표시 테스트 (Phase 03-3-2)"""
+        from component.chat_tab import format_summary_card
+
+        summary_entry = {
+            "turns": [1, 2, 3],
+            "excluded_turns": [2],
+            "summarized_turns": [1, 3],
+            "summary": "요약 내용"
+        }
+
+        result = format_summary_card(summary_entry)
+
+        assert "2턴 제외" in result
 
     def test_get_summary_history_empty(self):
         """빈 요약 히스토리 테스트"""
@@ -279,11 +313,11 @@ class TestChatTabSummary:
     def test_get_summary_history_multiple(self):
         """다중 요약 히스토리 테스트"""
         summary_history = [
-            {"created_at_turn": 4, "covers_turns": "1-3", "summary": "첫 번째 요약"},
-            {"created_at_turn": 7, "covers_turns": "4-6", "summary": "두 번째 요약"},
-            {"created_at_turn": 10, "covers_turns": "7-9", "summary": "세 번째 요약"},
+            {"created_at_turn": 4, "turns": [1, 2, 3], "summary": "첫 번째 요약"},
+            {"created_at_turn": 7, "turns": [4, 5, 6], "summary": "두 번째 요약"},
+            {"created_at_turn": 10, "turns": [7, 8, 9], "summary": "세 번째 요약"},
         ]
 
         assert len(summary_history) == 3
         assert summary_history[0]["created_at_turn"] == 4
-        assert summary_history[2]["covers_turns"] == "7-9"
+        assert summary_history[2]["turns"] == [7, 8, 9]

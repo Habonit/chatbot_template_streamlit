@@ -45,10 +45,9 @@ TOOL_SELECTOR_PROMPT = """
 - 현재까지 수집된 정보: {tool_results_summary}
 - 업로드된 PDF: {pdf_description}
 
-## 출력 형식
+## 출력 지시
 
-선택한 툴 이름만 출력 (따옴표 없이):
-web_search
+다음에 실행할 도구를 선택하고, 선택 이유를 설명하세요.
 """.strip()
 
 
