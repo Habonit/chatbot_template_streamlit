@@ -1,5 +1,10 @@
 import streamlit as st
 from domain.message import Message
+from component.education_tips import (
+    get_prompt_education, get_streaming_education,
+    get_summary_education, get_thinking_education,
+    get_tool_education,
+)
 
 
 def format_summary_card(summary_entry: dict) -> str:
@@ -54,9 +59,16 @@ def _render_welcome_state():
         col.markdown(f"- {example}")
 
     st.caption(
-        "동작 원리: 사용자 입력 → 모드 감지 (casual/normal/reasoning) "
+        "동작 원리: 사용자 입력 → 모드 감지 (casual/normal) "
         "→ LLM 호출 + 도구 사용 → 응답 생성"
     )
+
+    # Phase 05: 스트리밍 개념 교육
+    streaming_edu = get_streaming_education()
+    with st.expander(f"⚡ {streaming_edu['title']}", expanded=False):
+        st.caption(streaming_edu["explanation"])
+        for term in streaming_edu["terms"]:
+            st.caption(f"• **{term['term']}**: {term['desc']}")
 
 
 def _handle_streaming_response(on_stream: callable, user_input: str) -> dict:
@@ -125,6 +137,8 @@ def _handle_streaming_response(on_stream: callable, user_input: str) -> dict:
         "graph_path": metadata.get("graph_path", []),
         "summary_triggered": metadata.get("summary_triggered", False),
         "is_casual": metadata.get("is_casual", False),
+        # Phase 05: actual_prompts
+        "actual_prompts": metadata.get("actual_prompts", {}),
     }
 
 
@@ -133,7 +147,6 @@ def _mode_badge(mode: str) -> str:
     badges = {
         "casual": "🟢 casual",
         "normal": "🔵 normal",
-        "reasoning": "🟣 reasoning",
     }
     return badges.get(mode, f"⚪ {mode}")
 
@@ -166,6 +179,37 @@ def _render_turn_metadata(msg: Message) -> None:
             st.markdown(f"🧠 **Thinking:** budget {msg.thinking_budget}")
 
         st.caption(f"📈 Tokens: {msg.input_tokens} in / {msg.output_tokens} out")
+
+        # Phase 05: 교육 팁
+        st.divider()
+
+        # 1. 프롬프트 교육
+        prompt_edu = get_prompt_education(msg.actual_prompts)
+        if prompt_edu:
+            st.markdown(f"**📜 {prompt_edu['title']}**")
+            st.caption(prompt_edu["explanation"])
+            with st.expander("시스템 프롬프트 보기", expanded=False):
+                st.code(prompt_edu["system_prompt_preview"], language=None)
+
+        # 2. 요약/컨텍스트 교육
+        summary_edu = get_summary_education(msg.summary_triggered, [])
+        if summary_edu:
+            st.markdown(f"**🧠 {summary_edu['title']}**")
+            st.caption(summary_edu["explanation"])
+
+        # 3. Thinking 교육
+        thinking_edu = get_thinking_education(msg.thinking_budget, msg.thought_process)
+        if thinking_edu:
+            st.markdown(f"**💭 {thinking_edu['title']}**")
+            st.caption(thinking_edu["explanation"])
+
+        # 4. 도구 교육
+        tool_names = [fc.get("name", "") for fc in msg.function_calls]
+        tool_edu = get_tool_education(tool_names)
+        if tool_edu:
+            st.markdown(f"**🔧 {tool_edu['title']}**")
+            for item in tool_edu["explanations"]:
+                st.caption(f"• **{item['tool']}**: {item['desc']}")
 
 
 def render_chat_tab(

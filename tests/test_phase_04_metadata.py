@@ -95,9 +95,9 @@ class TestSummaryNodeMetadata:
 
         builder = ReactGraphBuilder(api_key="test-key")
 
-        # normal_turn_count=4 -> should_summarize = True
+        # normal_turn_count=3 -> should_summarize = True (summary_node는 router 이전 실행)
         messages = []
-        for i in range(1, 5):
+        for i in range(1, 4):
             messages.append(
                 HumanMessage(content=f"질문 {i}", additional_kwargs={"turn_id": i})
             )
@@ -105,8 +105,8 @@ class TestSummaryNodeMetadata:
 
         state = {
             "turn_count": 4,
-            "normal_turn_count": 4,
-            "normal_turn_ids": [1, 2, 3, 4],
+            "normal_turn_count": 3,
+            "normal_turn_ids": [1, 2, 3],
             "messages": messages,
             "session_id": "test",
             "compression_rate": 0.3,
@@ -131,11 +131,11 @@ class TestSummaryNodeMetadata:
         from service.react_graph import ReactGraphBuilder
 
         builder = ReactGraphBuilder(api_key="test-key")
-        # should_summarize(4, 4) = True, but normal_turn_ids has only 1 entry
+        # should_summarize(3, 3) = True, but messages is empty
         state = {
-            "turn_count": 4,
-            "normal_turn_count": 4,
-            "normal_turn_ids": [4],  # 하나만 있으면 turns_to_summarize = []
+            "turn_count": 3,
+            "normal_turn_count": 3,
+            "normal_turn_ids": [1, 2, 3],  # 3개 있지만 messages가 비어있음
             "messages": [],
             "session_id": "test",
             "compression_rate": 0.3,
@@ -221,10 +221,9 @@ class TestPrepareInvocationMetadata:
         from service.react_graph import ReactGraphBuilder
 
         builder = ReactGraphBuilder(api_key="test-key")
-        result = builder._prepare_invocation(
+        state, _ = builder._prepare_invocation(
             "파이썬 설명해줘", session_id="test", turn_count=1
         )
-        _, state, _, _ = result
         assert "graph_path" in state
         assert state["graph_path"] == []
 
@@ -233,10 +232,9 @@ class TestPrepareInvocationMetadata:
         from service.react_graph import ReactGraphBuilder
 
         builder = ReactGraphBuilder(api_key="test-key")
-        result = builder._prepare_invocation(
+        state, _ = builder._prepare_invocation(
             "설명해줘", session_id="test", turn_count=1
         )
-        _, state, _, _ = result
         assert "summary_triggered" in state
         assert state["summary_triggered"] is False
 
@@ -260,8 +258,11 @@ class TestInvokeMetadata:
             "summary_history": [],
             "input_tokens": 100,
             "output_tokens": 50,
-            "graph_path": ["summary_node", "llm_node"],
+            "graph_path": ["summary_node", "router_node", "llm_node"],
             "summary_triggered": False,
+            "mode": "normal",
+            "is_casual": False,
+            "normal_turn_ids": [1],
         }
 
         with patch.object(builder._graph, "invoke", return_value=mock_result):
@@ -288,8 +289,11 @@ class TestInvokeMetadata:
             "summary_history": [],
             "input_tokens": 100,
             "output_tokens": 50,
-            "graph_path": ["summary_node", "llm_node"],
+            "graph_path": ["summary_node", "router_node", "llm_node"],
             "summary_triggered": False,
+            "mode": "normal",
+            "is_casual": False,
+            "normal_turn_ids": [1],
         }
 
         with patch.object(builder._graph, "invoke", return_value=mock_result):
@@ -298,6 +302,7 @@ class TestInvokeMetadata:
             )
 
         assert "graph_path" in result
+        assert "router_node" in result["graph_path"]
         assert "summary_node" in result["graph_path"]
         assert "llm_node" in result["graph_path"]
 
@@ -317,8 +322,11 @@ class TestInvokeMetadata:
             "summary_history": [],
             "input_tokens": 100,
             "output_tokens": 50,
-            "graph_path": ["summary_node", "llm_node"],
+            "graph_path": ["summary_node", "router_node", "llm_node"],
             "summary_triggered": False,
+            "mode": "normal",
+            "is_casual": False,
+            "normal_turn_ids": [1],
         }
 
         with patch.object(builder._graph, "invoke", return_value=mock_result):
@@ -329,20 +337,33 @@ class TestInvokeMetadata:
         assert result["summary_triggered"] is False
 
     def test_invoke_casual_returns_casual_metadata(self):
-        """casual invoke는 casual 메타데이터 반환"""
+        """casual invoke는 casual 메타데이터 반환 (그래프 통합)"""
         from service.react_graph import ReactGraphBuilder
 
         builder = ReactGraphBuilder(api_key="test-key")
         builder.build()
 
-        with patch.object(
-            builder, "_invoke_llm_with_token_tracking",
-            return_value=("반가워요!", 10, 5)
-        ):
+        mock_result = {
+            "messages": [
+                HumanMessage(content="안녕!"),
+                AIMessage(content="반가워요!"),
+            ],
+            "summary": "",
+            "summary_history": [],
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "graph_path": ["summary_node", "router_node", "casual_node"],
+            "summary_triggered": False,
+            "mode": "casual",
+            "is_casual": True,
+            "normal_turn_ids": [],
+        }
+
+        with patch.object(builder._graph, "invoke", return_value=mock_result):
             result = builder.invoke("안녕!", session_id="test", turn_count=1)
 
         assert result["mode"] == "casual"
-        assert result["graph_path"] == ["casual_bypass"]
+        assert result["graph_path"] == ["summary_node", "router_node", "casual_node"]
         assert result["summary_triggered"] is False
         assert result["is_casual"] is True
 
@@ -368,9 +389,12 @@ class TestInvokeMetadata:
             "summary_history": [],
             "input_tokens": 100,
             "output_tokens": 50,
-            # summary_node -> llm_node(1st) -> tool -> llm_node(2nd)
-            "graph_path": ["summary_node", "llm_node", "llm_node"],
+            # summary_node -> router_node -> llm_node(1st) -> tool -> llm_node(2nd)
+            "graph_path": ["summary_node", "router_node", "llm_node", "llm_node"],
             "summary_triggered": False,
+            "mode": "normal",
+            "is_casual": False,
+            "normal_turn_ids": [1],
         }
 
         with patch.object(builder._graph, "invoke", return_value=mock_result):
@@ -380,7 +404,7 @@ class TestInvokeMetadata:
 
         # tool_node가 2번째 llm_node 앞에 삽입되어야 함
         assert result["graph_path"] == [
-            "summary_node", "llm_node", "tool_node", "llm_node"
+            "summary_node", "router_node", "llm_node", "tool_node", "llm_node"
         ]
 
     def test_invoke_no_tool_no_enhancement(self):
@@ -399,8 +423,11 @@ class TestInvokeMetadata:
             "summary_history": [],
             "input_tokens": 100,
             "output_tokens": 50,
-            "graph_path": ["summary_node", "llm_node"],
+            "graph_path": ["summary_node", "router_node", "llm_node"],
             "summary_triggered": False,
+            "mode": "normal",
+            "is_casual": False,
+            "normal_turn_ids": [1],
         }
 
         with patch.object(builder._graph, "invoke", return_value=mock_result):
@@ -408,105 +435,71 @@ class TestInvokeMetadata:
                 "파이썬 설명해줘", session_id="test", turn_count=1
             )
 
-        assert result["graph_path"] == ["summary_node", "llm_node"]
-
-
-class TestInvokeCasualMetadata:
-    """_invoke_casual 메타데이터 테스트"""
-
-    def test_invoke_casual_has_mode(self):
-        """_invoke_casual 반환에 mode='casual' 포함"""
-        from service.react_graph import ReactGraphBuilder
-
-        builder = ReactGraphBuilder(api_key="test-key")
-        with patch.object(
-            builder, "_invoke_llm_with_token_tracking",
-            return_value=("네!", 5, 3)
-        ):
-            result = builder._invoke_casual("안녕", "", [], [])
-
-        assert result["mode"] == "casual"
-
-    def test_invoke_casual_has_graph_path(self):
-        """_invoke_casual 반환에 graph_path=['casual_bypass'] 포함"""
-        from service.react_graph import ReactGraphBuilder
-
-        builder = ReactGraphBuilder(api_key="test-key")
-        with patch.object(
-            builder, "_invoke_llm_with_token_tracking",
-            return_value=("네!", 5, 3)
-        ):
-            result = builder._invoke_casual("안녕", "", [], [])
-
-        assert result["graph_path"] == ["casual_bypass"]
-
-    def test_invoke_casual_has_summary_triggered_false(self):
-        """_invoke_casual 반환에 summary_triggered=False 포함"""
-        from service.react_graph import ReactGraphBuilder
-
-        builder = ReactGraphBuilder(api_key="test-key")
-        with patch.object(
-            builder, "_invoke_llm_with_token_tracking",
-            return_value=("네!", 5, 3)
-        ):
-            result = builder._invoke_casual("안녕", "", [], [])
-
-        assert result["summary_triggered"] is False
+        assert result["graph_path"] == ["summary_node", "router_node", "llm_node"]
 
 
 class TestStreamMetadata:
     """stream() 메타데이터 테스트"""
 
     def test_stream_casual_done_has_mode(self):
-        """casual 스트리밍 done 이벤트에 mode='casual' 포함"""
+        """casual 스트리밍 done 이벤트에 mode='casual' 포함 (그래프 통합)"""
         from service.react_graph import ReactGraphBuilder
-        from langchain_google_genai import ChatGoogleGenerativeAI
 
         builder = ReactGraphBuilder(api_key="test-key")
+        builder.build()
 
-        mock_chunk = MagicMock()
-        mock_chunk.content = "네!"
-        mock_chunk.usage_metadata = {"input_tokens": 5, "output_tokens": 3}
+        mock_state_values = {
+            "messages": [AIMessage(content="네!")],
+            "summary": "",
+            "summary_history": [],
+            "input_tokens": 5,
+            "output_tokens": 3,
+            "mode": "casual",
+            "is_casual": True,
+            "normal_turn_ids": [],
+            "normal_turn_count": 0,
+            "graph_path": ["summary_node", "router_node", "casual_node"],
+            "summary_triggered": False,
+        }
+        mock_state = MagicMock()
+        mock_state.values = mock_state_values
 
-        with patch.object(ChatGoogleGenerativeAI, "stream", return_value=iter([mock_chunk])):
+        with patch.object(builder._graph, "stream", return_value=iter([])), \
+             patch.object(builder._graph, "get_state", return_value=mock_state):
             chunks = list(builder.stream("안녕", session_id="test"))
 
         done = chunks[-1]
         assert done["type"] == "done"
         meta = done["metadata"]
         assert meta["mode"] == "casual"
-        assert meta["graph_path"] == ["casual_bypass"]
+        assert meta["graph_path"] == ["summary_node", "router_node", "casual_node"]
         assert meta["summary_triggered"] is False
-
-    def test_stream_casual_done_has_graph_path(self):
-        """casual stream done에 graph_path 포함"""
-        from service.react_graph import ReactGraphBuilder
-        from langchain_google_genai import ChatGoogleGenerativeAI
-
-        builder = ReactGraphBuilder(api_key="test-key")
-
-        mock_chunk = MagicMock()
-        mock_chunk.content = "안녕하세요"
-        mock_chunk.usage_metadata = {"input_tokens": 5, "output_tokens": 3}
-
-        with patch.object(ChatGoogleGenerativeAI, "stream", return_value=iter([mock_chunk])):
-            chunks = list(builder._stream_casual("안녕", "", [], []))
-
-        done = chunks[-1]
-        assert done["metadata"]["graph_path"] == ["casual_bypass"]
 
     def test_stream_done_metadata_has_required_keys(self):
         """stream done 이벤트에 Phase 04 메타데이터 키가 있는지"""
         from service.react_graph import ReactGraphBuilder
-        from langchain_google_genai import ChatGoogleGenerativeAI
 
         builder = ReactGraphBuilder(api_key="test-key")
+        builder.build()
 
-        mock_chunk = MagicMock()
-        mock_chunk.content = "네!"
-        mock_chunk.usage_metadata = {"input_tokens": 5, "output_tokens": 3}
+        mock_state_values = {
+            "messages": [AIMessage(content="네!")],
+            "summary": "",
+            "summary_history": [],
+            "input_tokens": 5,
+            "output_tokens": 3,
+            "mode": "casual",
+            "is_casual": True,
+            "normal_turn_ids": [],
+            "normal_turn_count": 0,
+            "graph_path": ["summary_node", "router_node", "casual_node"],
+            "summary_triggered": False,
+        }
+        mock_state = MagicMock()
+        mock_state.values = mock_state_values
 
-        with patch.object(ChatGoogleGenerativeAI, "stream", return_value=iter([mock_chunk])):
+        with patch.object(builder._graph, "stream", return_value=iter([])), \
+             patch.object(builder._graph, "get_state", return_value=mock_state):
             chunks = list(builder.stream("안녕", session_id="test"))
 
         done = chunks[-1]
@@ -608,7 +601,7 @@ class TestAppMetadata:
             "normal_turn_ids": [],
             "normal_turn_count": 0,
             "mode": "casual",
-            "graph_path": ["casual_bypass"],
+            "graph_path": ["summary_node", "router_node", "casual_node"],
             "summary_triggered": False,
             "is_casual": True,
             "error": None,
@@ -620,7 +613,7 @@ class TestAppMetadata:
 
         assistant_msg = mock_st.session_state.messages[-1]
         assert assistant_msg.mode == "casual"
-        assert assistant_msg.graph_path == ["casual_bypass"]
+        assert assistant_msg.graph_path == ["summary_node", "router_node", "casual_node"]
         assert assistant_msg.is_casual is True
 
     @patch("app.st")

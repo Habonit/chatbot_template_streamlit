@@ -190,6 +190,8 @@ class TestOverviewTab:
 
         markdown = get_langgraph_diagram()
 
+        assert "router_node" in markdown
+        assert "casual_node" in markdown
         assert "summary_node" in markdown
         assert "llm_node" in markdown
         assert "tool_node" in markdown
@@ -203,7 +205,7 @@ class TestOverviewTab:
 
         expected_tools = [
             "get_current_time",
-            "switch_to_reasoning",
+            "reasoning",
             "web_search",
             "search_pdf_knowledge",
         ]

@@ -195,36 +195,35 @@ class TestPhase05SummaryNode:
         assert callable(should_summarize)
 
     def test_should_summarize_returns_false_for_early_turns(self):
-        """초기 턴에서는 요약 안함 테스트"""
+        """초기 턴에서는 요약 안함 테스트 (현재 턴 미포함 기준)"""
         from service.react_graph import should_summarize
 
         assert should_summarize(1) is False
         assert should_summarize(2) is False
-        assert should_summarize(3) is False
 
-    def test_should_summarize_returns_true_at_turn_4(self):
-        """Turn 4에서 요약 트리거 테스트"""
+    def test_should_summarize_returns_true_at_turn_3(self):
+        """Turn 3에서 요약 트리거 테스트 (이전 normal 3턴 누적)"""
         from service.react_graph import should_summarize
 
-        assert should_summarize(4) is True
+        assert should_summarize(3) is True
 
-    def test_should_summarize_returns_true_at_turn_7(self):
-        """Turn 7에서 요약 트리거 테스트"""
+    def test_should_summarize_returns_true_at_turn_6(self):
+        """Turn 6에서 요약 트리거 테스트"""
         from service.react_graph import should_summarize
 
-        assert should_summarize(7) is True
+        assert should_summarize(6) is True
 
-    def test_should_summarize_returns_true_at_turn_10(self):
-        """Turn 10에서 요약 트리거 테스트"""
+    def test_should_summarize_returns_true_at_turn_9(self):
+        """Turn 9에서 요약 트리거 테스트"""
         from service.react_graph import should_summarize
 
-        assert should_summarize(10) is True
+        assert should_summarize(9) is True
 
-    def test_should_summarize_returns_false_at_turn_5(self):
-        """Turn 5에서는 요약 안함 테스트"""
+    def test_should_summarize_returns_false_at_turn_4(self):
+        """Turn 4에서는 요약 안함 테스트"""
         from service.react_graph import should_summarize
 
-        assert should_summarize(5) is False
+        assert should_summarize(4) is False
 
 
 class TestPhase05GraphStructure:
@@ -243,8 +242,8 @@ class TestPhase05GraphStructure:
         assert len(start_connections) > 0
         assert start_connections[0][1] == "summary_node"
 
-    def test_summary_node_connects_to_llm_node(self):
-        """summary_node가 llm_node로 연결되는지 테스트"""
+    def test_summary_node_connects_to_router_node(self):
+        """summary_node가 router_node로 연결되는지 테스트"""
         from service.react_graph import ReactGraphBuilder
 
         builder = ReactGraphBuilder(api_key="test-api-key")
@@ -254,7 +253,7 @@ class TestPhase05GraphStructure:
         summary_edges = [e for e in edges if e[0] == "summary_node"]
 
         assert len(summary_edges) > 0
-        assert summary_edges[0][1] == "llm_node"
+        assert summary_edges[0][1] == "router_node"
 
 
 class TestPhase07TokenUsage:
@@ -291,10 +290,16 @@ class TestPhase07TokenUsage:
             "summary_history": [],
             "input_tokens": 100,
             "output_tokens": 50,
+            "mode": "normal",
+            "is_casual": False,
+            "normal_turn_ids": [0],
+            "normal_turn_count": 1,
+            "graph_path": ["summary_node", "router_node", "llm_node"],
+            "summary_triggered": False,
         }
 
         with patch.object(builder._graph, "invoke", return_value=mock_result):
-            # normal 모드로 감지되는 입력 사용 (casual은 그래프 스킵)
+            # normal 모드로 감지되는 입력 사용
             result = builder.invoke(
                 user_input="LangChain에 대해 설명해줘",
                 session_id="test-session",
@@ -311,17 +316,31 @@ class TestPhase07FastPath:
 
     def test_casual_conversation_returns_is_casual_flag(self):
         """일상적 대화에서 is_casual 플래그가 반환되는지 테스트"""
-        from unittest.mock import patch
+        from unittest.mock import patch, MagicMock
         from service.react_graph import ReactGraphBuilder
+        from langchain_core.messages import HumanMessage, AIMessage
 
         builder = ReactGraphBuilder(api_key="test-api-key")
         builder.build()
 
-        with patch.object(
-            builder,
-            "_invoke_llm_with_token_tracking",
-            return_value=("네, 궁금한 점 있으시면 말씀해주세요!", 10, 5)
-        ):
+        mock_result = {
+            "messages": [
+                HumanMessage(content="오호"),
+                AIMessage(content="네, 궁금한 점 있으시면 말씀해주세요!"),
+            ],
+            "summary": "",
+            "summary_history": [],
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "mode": "casual",
+            "is_casual": True,
+            "normal_turn_ids": [],
+            "normal_turn_count": 0,
+            "graph_path": ["summary_node", "router_node", "casual_node"],
+            "summary_triggered": False,
+        }
+
+        with patch.object(builder._graph, "invoke", return_value=mock_result):
             result = builder.invoke(
                 user_input="오호",
                 session_id="test-session",
@@ -344,6 +363,12 @@ class TestPhase07FastPath:
             "summary_history": [],
             "input_tokens": 100,
             "output_tokens": 50,
+            "mode": "normal",
+            "is_casual": False,
+            "normal_turn_ids": [0],
+            "normal_turn_count": 1,
+            "graph_path": ["summary_node", "router_node", "llm_node"],
+            "summary_triggered": False,
         }
 
         with patch.object(builder._graph, "invoke", return_value=mock_result):

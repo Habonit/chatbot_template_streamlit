@@ -98,7 +98,6 @@ def _create_graph_builder(
         db_path=DB_PATH,
         search_depth=settings.get("search_depth", "basic"),
         max_results=settings.get("max_results", 5),
-        auto_reasoning=settings.get("auto_reasoning", True),
     )
 
 
@@ -166,6 +165,7 @@ def handle_chat_message(
         thought_process=result.get("thought_process"),
         thinking_budget=settings.get("thinking_budget", 0),
         is_casual=result.get("is_casual", False),
+        actual_prompts=result.get("actual_prompts", {}),
     )
     st.session_state.messages.append(assistant_msg)
     # Phase 02-6: CSV 저장 제거 - SqliteSaver가 그래프 상태로 저장
@@ -250,6 +250,7 @@ def handle_stream_message(
             thought_process=final_metadata.get("thought_process"),
             thinking_budget=settings.get("thinking_budget", 0),
             is_casual=final_metadata.get("is_casual", False),
+            actual_prompts=final_metadata.get("actual_prompts", {}),
         )
         st.session_state.messages.append(assistant_msg)
 

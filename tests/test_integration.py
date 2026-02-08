@@ -236,10 +236,10 @@ class TestPhase07Integration:
         from service.react_graph import ReactGraphBuilder
         from service.reasoning_detector import detect_reasoning_need
 
-        # 추론 모드 감지 확인
+        # 모드 감지 확인 (reasoning 모드 제거 → normal)
         user_input = "A와 B의 차이점을 비교해서 분석해줘"
         mode = detect_reasoning_need(user_input)
-        assert mode == "reasoning", f"Expected 'reasoning', got '{mode}'"
+        assert mode == "normal", f"Expected 'normal', got '{mode}'"
 
         builder = ReactGraphBuilder(
             api_key=google_api_key,

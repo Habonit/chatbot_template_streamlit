@@ -7,11 +7,14 @@ def get_langgraph_diagram() -> str:
 | 순서 | 노드 | 역할 | 다음 단계 |
 |:---:|------|------|----------|
 | 1 | **START** | 그래프 진입점 | → summary_node |
-| 2 | **summary_node** | Context Compression (3턴마다 대화 요약) | → llm_node |
-| 3 | **llm_node** | LLM 추론 + `bind_tools()` | → tools_condition 분기 |
-| 4a | **tool_node** | ToolNode 실행 (도구 호출 시) | → llm_node (재추론) |
-| 4b | **END** | 그래프 종료 (도구 호출 없을 시) | - |
+| 2 | **summary_node** | Context Compression (3턴마다 대화 요약) | → router_node |
+| 3 | **router_node** | 모드 감지 (casual/normal) | → casual_node 또는 llm_node |
+| 4a | **casual_node** | casual 모드 LLM 직접 호출 | → END |
+| 4b | **llm_node** | LLM 추론 + `bind_tools()` | → tools_condition 분기 |
+| 5a | **tool_node** | ToolNode 실행 (도구 호출 시) | → llm_node (재추론) |
+| 5b | **END** | 그래프 종료 (도구 호출 없을 시) | - |
 
+> **router_node**: `detect_reasoning_need()`로 모드를 판별하여 casual이면 casual_node, 아니면 llm_node로 라우팅
 > **tools_condition**: llm_node의 응답에 tool_calls가 포함되면 → tool_node, 없으면 → END
 """
 
@@ -29,22 +32,25 @@ graph TB
     end
     subgraph Service["Service Layer"]
         graph_builder["ReactGraphBuilder"]
-        reasoning_detector["ReasoningDetector"]
+        mode_detector["ModeDetector"]
         session_mgr["SessionManager"]
         llm_service["LLMService"]
         rag_service["RAGService"]
     end
     subgraph LangGraph["LangGraph ReAct Graph"]
-        summary_node["summary_node"] --> llm_node["llm_node"]
+        summary_node["summary_node"] --> router_node["router_node"]
+        router_node -->|casual| casual_node["casual_node"]
+        router_node -->|normal| llm_node["llm_node"]
+        casual_node --> END_NODE["END"]
         llm_node -->|tools_condition| tool_node["tool_node"]
         tool_node --> llm_node
-        llm_node --> END_NODE["END"]
+        llm_node --> END_NODE
     end
     chat --> graph_builder
     sidebar --> graph_builder
     graph_builder --> LangGraph
     pdf --> rag_service
-    chat --> reasoning_detector
+    chat --> mode_detector
 """
 
 
@@ -61,7 +67,7 @@ def get_concept_cards() -> list[dict]:
             "title": "Tool Calling",
             "emoji": "🔧",
             "description": "`bind_tools()` + `ToolNode` + `tools_condition`으로 구현된 LangChain 표준 Tool Calling 패턴입니다.",
-            "detail": "4개 도구가 LLM에 바인딩됩니다:\n- `get_current_time`: 현재 시각 (KST)\n- `switch_to_reasoning`: 추론 모드 전환 (gemini-2.5-pro)\n- `web_search`: Tavily 웹 검색\n- `search_pdf_knowledge`: PDF RAG 검색\n\nLLM은 자동으로 적합한 도구를 선택하여 호출합니다.",
+            "detail": "4개 도구가 LLM에 바인딩됩니다:\n- `get_current_time`: 현재 시각 (KST)\n- `reasoning`: 단계별 추론 분석\n- `web_search`: Tavily 웹 검색\n- `search_pdf_knowledge`: PDF RAG 검색\n\nLLM은 자동으로 적합한 도구를 선택하여 호출합니다.",
         },
         {
             "title": "Context Compression",
@@ -84,8 +90,8 @@ def get_concept_cards() -> list[dict]:
         {
             "title": "Casual Detection",
             "emoji": "💬",
-            "description": "`ReasoningDetector`가 패턴 매칭으로 casual/normal/reasoning 모드를 분류합니다.",
-            "detail": "casual 모드는 그래프를 거치지 않고 직접 LLM 호출합니다 (casual_bypass). 인사, 감탄사, 짧은 입력 등이 casual로 분류됩니다. reasoning 모드는 복잡한 분석/비교/수학 등에 활성화됩니다.",
+            "description": "`ModeDetector`가 패턴 매칭으로 casual/normal 모드를 분류합니다.",
+            "detail": "`summary_node` 다음에 `router_node`가 모드를 판별합니다. casual이면 `casual_node`로, 아니면 `llm_node`로 라우팅됩니다. 인사, 감탄사, 짧은 입력 등이 casual로 분류됩니다. 복잡한 추론은 thinking_budget으로 제어됩니다.",
         },
         {
             "title": "Session & Checkpointing",
@@ -106,8 +112,8 @@ def get_tool_info() -> list[dict]:
             "bind_method": "bind_tools()",
         },
         {
-            "name": "switch_to_reasoning",
-            "description": "추론 모드 전환 (gemini-2.5-pro)",
+            "name": "reasoning",
+            "description": "단계별 추론 분석",
             "condition": "복잡한 분석, 비교, 수학 계산",
             "bind_method": "bind_tools()",
         },
@@ -168,7 +174,7 @@ def get_overview_content() -> dict:
 - **Context Compression**: 3턴마다 대화 요약으로 장기 대화 지원
 - **Streaming**: 실시간 토큰 스트리밍으로 응답 대기 시간 최소화
 - **Thinking Mode**: 모델의 사고 과정 시각화
-- **Casual Detection**: 입력 유형별 자동 모드 분류 (casual/normal/reasoning)
+- **Casual Detection**: 입력 유형별 자동 모드 분류 (casual/normal)
 - **Session Checkpointing**: SqliteSaver 기반 자동 상태 저장
 """,
         "quick_start": """
@@ -193,7 +199,7 @@ def get_overview_content() -> dict:
 - **일반 대화**: 자연스러운 대화형 AI 응답
 - **PDF 기반 Q&A**: 업로드된 PDF 문서에서 관련 정보를 검색하여 답변
 - **웹 검색**: Tavily API를 통해 최신 정보를 검색하여 답변에 반영
-- **자동 모델 전환**: 복잡한 질문 시 자동으로 추론 모델(Pro)로 전환
+- **추론 도구**: 복잡한 질문 시 단계별 분석 도구 자동 호출
 
 ### PDF 전처리
 - **텍스트 추출**: PDF에서 텍스트 추출
@@ -279,7 +285,7 @@ def render_overview_tab() -> None:
     # 4. LangGraph 워크플로우
     with st.expander("🔄 LangGraph 워크플로우", expanded=False):
         st.markdown("### ReAct 그래프 실행 흐름")
-        st.markdown("사용자 입력 → summary_node → llm_node → (tool_node ↔ llm_node) → END")
+        st.markdown("사용자 입력 → summary_node → router_node → casual_node → END 또는 llm_node → (tool_node ↔ llm_node) → END")
         st.markdown(get_langgraph_diagram())
 
     # 5. 툴 콜링 구성

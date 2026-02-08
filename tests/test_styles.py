@@ -12,7 +12,6 @@ class TestGetCustomCss:
         css = get_custom_css()
         assert ".mode-badge-casual" in css
         assert ".mode-badge-normal" in css
-        assert ".mode-badge-reasoning" in css
 
     def test_contains_metadata_panel_style(self):
         """메타데이터 패널 CSS 포함"""

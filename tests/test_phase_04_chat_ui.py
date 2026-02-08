@@ -23,12 +23,6 @@ class TestModeBadge:
 
         assert _mode_badge("normal") == "🔵 normal"
 
-    def test_mode_badge_reasoning(self):
-        """reasoning 모드 → 🟣 reasoning"""
-        from component.chat_tab import _mode_badge
-
-        assert _mode_badge("reasoning") == "🟣 reasoning"
-
     def test_mode_badge_unknown(self):
         """알 수 없는 모드 → ⚪ unknown_mode"""
         from component.chat_tab import _mode_badge
@@ -56,11 +50,11 @@ class TestFormatGraphPath:
         assert result == "summary_node → llm_node → tool_node → llm_node → END"
 
     def test_format_graph_path_casual(self):
-        """캐주얼 경로 → casual_bypass → END"""
+        """캐주얼 경로 → router_node → casual_node → END"""
         from component.chat_tab import _format_graph_path
 
-        result = _format_graph_path(["casual_bypass"])
-        assert result == "casual_bypass → END"
+        result = _format_graph_path(["summary_node", "router_node", "casual_node"])
+        assert result == "summary_node → router_node → casual_node → END"
 
     def test_format_graph_path_empty(self):
         """빈 경로 → N/A"""
@@ -137,7 +131,7 @@ class TestRenderTurnMetadata:
             turn_id=3,
             role="assistant",
             content="Deep answer",
-            mode="reasoning",
+            mode="normal",
             thinking_budget=4096,
         )
         _render_turn_metadata(msg)
@@ -214,7 +208,7 @@ class TestHandleStreamingResponseMetadata:
                 "metadata": {
                     "text": "Answer",
                     "model_used": "gemini-2.0-flash",
-                    "mode": "reasoning",
+                    "mode": "normal",
                     "graph_path": ["summary_node", "llm_node"],
                     "summary_triggered": True,
                     "is_casual": False,
@@ -223,7 +217,7 @@ class TestHandleStreamingResponseMetadata:
 
         result = _handle_streaming_response(mock_stream, "test")
 
-        assert result["mode"] == "reasoning"
+        assert result["mode"] == "normal"
         assert result["graph_path"] == ["summary_node", "llm_node"]
         assert result["summary_triggered"] is True
         assert result["is_casual"] is False

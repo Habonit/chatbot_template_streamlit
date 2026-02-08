@@ -3,6 +3,7 @@ import csv
 import io
 import os
 from domain.session import Session
+from component.education_tips import get_parameter_help
 
 
 def _generate_csv_data(messages: list) -> bytes:
@@ -104,6 +105,7 @@ def render_sidebar() -> dict:
             max_value=2.0,
             value=0.7,
             step=0.1,
+            help=get_parameter_help("temperature"),
         )
 
         top_p = st.slider(
@@ -112,6 +114,7 @@ def render_sidebar() -> dict:
             max_value=1.0,
             value=0.9,
             step=0.05,
+            help=get_parameter_help("top_p"),
         )
 
         max_output_tokens = st.slider(
@@ -120,7 +123,7 @@ def render_sidebar() -> dict:
             max_value=65536,
             value=8192,
             step=256,
-            help="최대 출력 토큰 수 (Gemini 2.5: 최대 65,536)",
+            help=get_parameter_help("max_output_tokens"),
         )
 
         # Phase 03-1: seed 파라미터 추가
@@ -130,7 +133,7 @@ def render_sidebar() -> dict:
             max_value=2147483647,
             value=-1,
             step=1,
-            help="응답 재현성 제어. -1은 랜덤, 양수는 고정 시드",
+            help=get_parameter_help("seed"),
         )
 
         st.divider()
@@ -142,12 +145,6 @@ def render_sidebar() -> dict:
             help="복잡한 추론이 필요한 질문에 thinking 활성화",
         )
 
-        auto_reasoning = st.toggle(
-            "자동 추론 모드 감지",
-            value=True,
-            help="질문 유형에 따라 자동으로 추론 모드 활성화",
-        )
-
         # Phase 03-5: thinking 설정
         if reasoning_mode:
             st.caption("Thinking 활성화됨 — 복잡한 추론 질문에 사고 과정을 사용합니다.")
@@ -157,7 +154,7 @@ def render_sidebar() -> dict:
                 max_value=8192,
                 value=1024,
                 step=128,
-                help="추론에 사용할 토큰 예산 (0: 비활성화, 128+: 활성화)",
+                help=get_parameter_help("thinking_budget"),
             )
 
             show_thoughts = st.toggle(
@@ -209,7 +206,7 @@ def render_sidebar() -> dict:
             max_value=0.5,
             value=0.3,
             step=0.05,
-            help="낮을수록 짧게 요약, 높을수록 상세하게 요약 (3턴마다 적용)",
+            help=get_parameter_help("compression_rate"),
         )
 
     st.sidebar.divider()
@@ -286,7 +283,6 @@ def render_sidebar() -> dict:
         "session_id": st.session_state.get("current_session", ""),
         # Phase 02-7: 추론 모드 설정
         "reasoning_mode": reasoning_mode,
-        "auto_reasoning": auto_reasoning,
         # Phase 03-3: 요약 압축률
         "compression_rate": compression_rate,
         # Phase 03-5: thinking 설정

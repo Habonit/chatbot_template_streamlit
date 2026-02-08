@@ -25,16 +25,6 @@ def get_custom_css() -> str:
     font-size: 0.85em;
     font-weight: 600;
 }
-.mode-badge-reasoning {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 12px;
-    background-color: #F3E5F5;
-    color: #7B1FA2;
-    font-size: 0.85em;
-    font-weight: 600;
-}
-
 /* === 메타데이터 패널 === */
 .metadata-panel {
     background-color: #F7F8FA;
