@@ -18,6 +18,7 @@ from component.chat_tab import render_chat_tab
 from component.pdf_tab import render_pdf_tab
 from component.overview_tab import render_overview_tab
 from component.prompts_tab import render_prompts_tab
+from component.styles import inject_custom_css
 
 load_dotenv()
 
@@ -95,6 +96,9 @@ def _create_graph_builder(
         embedding_service=embedding_service,
         embedding_repo=embed_repo if st.session_state.chunks else None,
         db_path=DB_PATH,
+        search_depth=settings.get("search_depth", "basic"),
+        max_results=settings.get("max_results", 5),
+        auto_reasoning=settings.get("auto_reasoning", True),
     )
 
 
@@ -385,6 +389,7 @@ def load_session_data(
 
 
 def main():
+    inject_custom_css()
     init_session_state()
 
     # Phase 02-6: SessionManager + EmbeddingRepository만 사용

@@ -155,7 +155,7 @@ def render_prompts_tab() -> None:
             st.markdown(f"**그래프 노드**: `{info['graph_node']}`")
             st.divider()
             st.markdown("**프롬프트 내용:**")
-            st.code(info["content"], language="text")
+            st.code(info["content"], language="python")
 
     if legacy_prompts:
         st.markdown("### 🗄️ 레거시 프롬프트")
@@ -166,7 +166,7 @@ def render_prompts_tab() -> None:
                 st.markdown(f"**사용 위치**: {info['usage']}")
                 st.divider()
                 st.markdown("**프롬프트 내용:**")
-                st.code(info["content"], language="text")
+                st.code(info["content"], language="python")
 
     st.divider()
 

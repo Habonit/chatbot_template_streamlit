@@ -251,6 +251,9 @@ class ReactGraphBuilder:
         embedding_service: Any = None,
         embedding_repo: Any = None,
         db_path: str = None,
+        search_depth: str = "basic",
+        max_results: int = 5,
+        auto_reasoning: bool = True,
     ):
         self.api_key = api_key
         self.model_name = model
@@ -265,6 +268,9 @@ class ReactGraphBuilder:
         self.embedding_service = embedding_service
         self.embedding_repo = embedding_repo
         self.db_path = db_path or self.DEFAULT_DB_PATH
+        self.search_depth = search_depth
+        self.max_results = max_results
+        self.auto_reasoning = auto_reasoning
 
         # Phase 03-5: thinking 지원 모델 검증
         THINKING_SUPPORTED_MODELS = ["gemini-2.5-pro", "gemini-2.5-flash"]
@@ -549,6 +555,8 @@ class ReactGraphBuilder:
             embedding_repo=self.embedding_repo,
             session_id=self._current_session_id,
             llm=self._llm,
+            search_depth=self.search_depth,
+            max_results=self.max_results,
         )
 
         # LLM에 도구 바인딩
@@ -607,12 +615,18 @@ class ReactGraphBuilder:
             normal_turn_ids = []
 
         from service.reasoning_detector import detect_reasoning_need
-        mode = detect_reasoning_need(user_input)
+        detected_mode = detect_reasoning_need(user_input)
 
-        if mode == "casual":
+        if detected_mode == "casual":
             return None
 
-        # normal 모드
+        # auto_reasoning=False이면 reasoning을 normal로 처리
+        if detected_mode == "reasoning" and not self.auto_reasoning:
+            mode = "normal"
+        else:
+            mode = detected_mode
+
+        # normal/reasoning 모드
         updated_normal_turn_ids = normal_turn_ids + [turn_count]
         normal_turn_count = len(updated_normal_turn_ids)
 
@@ -657,7 +671,7 @@ class ReactGraphBuilder:
 
         config = {"configurable": {"thread_id": session_id}}
 
-        return "normal", initial_state, config, updated_normal_turn_ids
+        return mode, initial_state, config, updated_normal_turn_ids
 
     def _extract_current_turn_messages(
         self, result_messages: list, turn_count: int

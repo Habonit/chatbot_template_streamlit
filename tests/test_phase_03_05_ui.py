@@ -22,6 +22,8 @@ class TestSidebarThinkingSettings:
         mock_st.number_input.return_value = -1
         mock_st.toggle.return_value = False
         mock_st.columns.return_value = [MagicMock(), MagicMock()]
+        mock_st.sidebar.columns.return_value = [MagicMock(), MagicMock()]
+        mock_st.sidebar.progress = MagicMock()
         # session_state needs attribute access support
         mock_session = MagicMock()
         mock_session.get.side_effect = lambda key, default=None: {
@@ -50,6 +52,8 @@ class TestSidebarThinkingSettings:
         mock_st.slider.return_value = 0.7
         mock_st.number_input.return_value = -1
         mock_st.toggle.return_value = False
+        mock_st.sidebar.columns.return_value = [MagicMock(), MagicMock()]
+        mock_st.sidebar.progress = MagicMock()
         # session_state needs attribute access support
         mock_session = MagicMock()
         mock_session.get.side_effect = lambda key, default=None: {

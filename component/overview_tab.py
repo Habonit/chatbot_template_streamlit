@@ -172,8 +172,6 @@ def get_overview_content() -> dict:
 - **Session Checkpointing**: SqliteSaver 기반 자동 상태 저장
 """,
         "quick_start": """
-## 시작하기
-
 ### 1. API Key 설정
 1. 사이드바의 **API Keys** 섹션을 엽니다
 2. **Gemini API Key** 입력 (Google AI Studio에서 발급)
@@ -191,8 +189,6 @@ def get_overview_content() -> dict:
 4. 처리 완료 후 Chat 탭에서 PDF 관련 질문을 할 수 있습니다
 """,
         "features": """
-## 주요 기능
-
 ### Chat 기능
 - **일반 대화**: 자연스러운 대화형 AI 응답
 - **PDF 기반 Q&A**: 업로드된 PDF 문서에서 관련 정보를 검색하여 답변
@@ -211,9 +207,7 @@ def get_overview_content() -> dict:
 - **대화 다운로드**: CSV 형식으로 대화 내역 다운로드
 """,
         "settings": """
-## 설정 가이드
-
-### Model Settings
+### Model & Reasoning
 | 설정 | 설명 | 범위 |
 |------|------|------|
 | **Chat Model** | 사용할 Gemini 모델 선택 | gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash |
@@ -221,7 +215,7 @@ def get_overview_content() -> dict:
 | **Top-p** | 누적 확률 기반 토큰 선택 | 0.0 ~ 1.0 (기본: 0.9) |
 | **Max Output Tokens** | 최대 출력 토큰 수 | 256 ~ 65,536 (기본: 8,192) |
 
-### External Search
+### Search
 | 설정 | 설명 |
 |------|------|
 | **Enable Tavily Search** | 웹 검색 기능 활성화/비활성화 |
@@ -229,22 +223,20 @@ def get_overview_content() -> dict:
 | **Max Results** | 검색 결과 최대 개수 (1~10) |
 """,
         "faq": """
-## FAQ
-
-### Q: API Key는 어디서 얻나요?
+**Q: API Key는 어디서 얻나요?**
 - **Gemini API Key**: [Google AI Studio](https://aistudio.google.com/)에서 발급
 - **Tavily API Key**: [Tavily](https://tavily.com/)에서 발급
 
-### Q: PDF 전처리는 왜 필요한가요?
+**Q: PDF 전처리는 왜 필요한가요?**
 PDF 전처리를 통해 문서의 내용을 벡터 임베딩으로 변환합니다. 이를 통해 질문과 관련된 문서 내용을 빠르게 검색할 수 있습니다.
 
-### Q: 세션을 바꾸면 데이터가 사라지나요?
+**Q: 세션을 바꾸면 데이터가 사라지나요?**
 아니요. 각 세션의 대화 내역, 토큰 사용량, PDF 데이터 등은 모두 저장됩니다. 세션 전환 시 해당 세션의 데이터가 로드됩니다.
 
-### Q: 토큰 제한은 어떻게 되나요?
+**Q: 토큰 제한은 어떻게 되나요?**
 환경 변수 `TOKEN_LIMIT_K`로 설정할 수 있습니다 (기본: 256K). 토큰 사용량이 80%를 초과하면 경고가 표시되며, 100% 초과 시 새 세션을 시작해야 합니다.
 
-### Q: 어떤 모델을 선택해야 하나요?
+**Q: 어떤 모델을 선택해야 하나요?**
 - **gemini-2.5-flash**: 빠른 응답, 일반적인 대화에 적합 (권장)
 - **gemini-2.5-pro**: 복잡한 추론, 분석 작업에 적합
 - **gemini-2.0-flash**: 이전 버전 (2026년 3월 종료 예정)
@@ -258,28 +250,31 @@ def render_overview_tab() -> None:
 
     content = get_overview_content()
 
+    # 1. 소개 (직접 표시, expander 제거)
     st.title("Gemini Hybrid Chatbot")
     st.caption("AI 챗봇 핵심 개념 교육 데모")
+    st.markdown(content["introduction"])
 
-    # 1. 소개
-    with st.expander("앱 소개", expanded=True):
-        st.markdown(content["introduction"])
+    # 2. 핵심 개념 카드 (2열 그리드)
+    st.markdown("### 핵심 개념")
+    cards = get_concept_cards()
+    for i in range(0, len(cards), 2):
+        cols = st.columns(2)
+        for j, col in enumerate(cols):
+            idx = i + j
+            if idx < len(cards):
+                card = cards[idx]
+                with col:
+                    with st.container(border=True):
+                        st.markdown(f"#### {card['emoji']} {card['title']}")
+                        st.markdown(card["description"])
+                        st.markdown(f"*{card['detail']}*")
 
-    # 2. 아키텍처 다이어그램
+    # 3. 아키텍처 다이어그램
     with st.expander("🏗️ 앱 아키텍처", expanded=False):
         st.markdown("### 전체 구조")
         st.markdown("Streamlit UI → Service Layer → LangGraph ReAct Graph")
         st_mermaid(get_architecture_diagram())
-
-    # 3. 핵심 개념 카드
-    with st.expander("📚 핵심 개념", expanded=False):
-        st.markdown("### AI 챗봇 핵심 기술")
-        cards = get_concept_cards()
-        for card in cards:
-            with st.container(border=True):
-                st.markdown(f"#### {card['emoji']} {card['title']}")
-                st.markdown(card["description"])
-                st.caption(card["detail"])
 
     # 4. LangGraph 워크플로우
     with st.expander("🔄 LangGraph 워크플로우", expanded=False):
@@ -296,6 +291,9 @@ def render_overview_tab() -> None:
     with st.expander("시작하기 (Quick Start)", expanded=False):
         st.markdown(content["quick_start"])
 
+    with st.expander("주요 기능", expanded=False):
+        st.markdown(content["features"])
+
     with st.expander("설정 가이드", expanded=False):
         st.markdown(content["settings"])
 
@@ -303,4 +301,4 @@ def render_overview_tab() -> None:
         st.markdown(content["faq"])
 
     st.divider()
-    st.caption("버전: 2.0.0 | Phase 04 | 마지막 업데이트: 2026-02-07")
+    st.caption("버전: 2.1.0 | Phase 04+ | 마지막 업데이트: 2026-02-08")
