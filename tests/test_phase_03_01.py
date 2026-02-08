@@ -148,7 +148,8 @@ class TestAppParameterPassing:
         import inspect
         import app
 
-        source = inspect.getsource(app.handle_chat_message)
+        # Phase 03-4: _create_graph_builder 팩토리로 이동
+        source = inspect.getsource(app._create_graph_builder)
 
         # ReactGraphBuilder 호출부에 top_p가 있어야 함
         assert "top_p=" in source or "top_p =" in source
@@ -158,7 +159,8 @@ class TestAppParameterPassing:
         import inspect
         import app
 
-        source = inspect.getsource(app.handle_chat_message)
+        # Phase 03-4: _create_graph_builder 팩토리로 이동
+        source = inspect.getsource(app._create_graph_builder)
 
         # ReactGraphBuilder 호출부에 max_output_tokens가 있어야 함
         assert "max_output_tokens=" in source or "max_output_tokens =" in source
@@ -168,7 +170,8 @@ class TestAppParameterPassing:
         import inspect
         import app
 
-        source = inspect.getsource(app.handle_chat_message)
+        # Phase 03-4: _create_graph_builder 팩토리로 이동
+        source = inspect.getsource(app._create_graph_builder)
 
         # ReactGraphBuilder 호출부에 seed가 있어야 함
         assert "seed=" in source or "seed =" in source

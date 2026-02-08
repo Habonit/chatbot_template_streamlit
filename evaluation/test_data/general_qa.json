@@ -1,0 +1,39 @@
+[
+    {
+        "question": "지금 몇 시야?",
+        "expected_tool": "get_current_time",
+        "answer_contains": ["시", "분"]
+    },
+    {
+        "question": "오늘 날짜 알려줘",
+        "expected_tool": "get_current_time",
+        "answer_contains": ["년", "월", "일"]
+    },
+    {
+        "question": "안녕하세요",
+        "expected_tool": null,
+        "unexpected_tools": [],
+        "answer_contains": []
+    },
+    {
+        "question": "고마워",
+        "expected_tool": null,
+        "unexpected_tools": [],
+        "answer_contains": []
+    },
+    {
+        "question": "최신 AI 뉴스 알려줘",
+        "expected_tool": "web_search",
+        "answer_contains": []
+    },
+    {
+        "question": "2+2는 뭐야?",
+        "expected_tool": null,
+        "answer_contains": ["4"]
+    },
+    {
+        "question": "피보나치 수열의 10번째 항은?",
+        "expected_tool": "reasoning",
+        "answer_contains": ["55"]
+    }
+]

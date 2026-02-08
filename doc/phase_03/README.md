@@ -36,11 +36,11 @@ Phase 03-2 (Structured Output)  ← Phase 03-3 선행 조건
     ↓
 Phase 03-3 (Tool Calling)
     ↓
-Phase 03-4 (Streaming)  ← 독립적, 03-3 이후 권장
+Phase 03-4 (Streaming)  ← 03-3 이후 권장
     ↓
-Phase 03-5 (추론 모델)  ← 03-3 이후 권장
+Phase 03-5 (추론 모델)  ← 03-4 이후 권장 (Streaming + Thinking 통합)
     ↓
-Phase 03-6 (평가 시스템)  ← 03-1 LangSmith 필요
+Phase 03-6 (평가 시스템)  ← 03-1 LangSmith 필요, invoke() 기반 독립 실행
 ```
 
 ---
@@ -79,13 +79,7 @@ Phase 03-6 (평가 시스템)  ← 03-1 LangSmith 필요
 
 ### 추가되는 의존성
 
-```toml
-# pyproject.toml
-[project]
-dependencies = [
-    "google-genai>=1.0.0",  # Phase 03-5: thinking 지원
-]
-```
+**없음** — `langchain-google-genai` 4.2.0이 `thinking_budget` 네이티브 지원.
 
 ### 사용되는 새 패턴
 
@@ -95,9 +89,9 @@ dependencies = [
 | `model.bind_tools([...])` | 3 | 도구 바인딩 |
 | `ToolNode(tools)` | 3 | 자동 도구 실행 |
 | `tools_condition` | 3 | 조건부 엣지 |
-| `graph.stream()` / `astream_events()` | 4 | 스트리밍 |
-| `types.ThinkingConfig` | 5 | 추론 설정 |
-| `Client.evaluate()` | 6 | 자동 평가 |
+| `graph.stream(stream_mode="messages")` | 4 | 동기 토큰 스트리밍 (Streamlit 호환) |
+| `ChatGoogleGenerativeAI(thinking_budget=...)` | 5 | 네이티브 추론 설정 |
+| `langsmith.evaluation.evaluate()` | 6 | 자동 평가 |
 
 ---
 
@@ -114,7 +108,7 @@ START → summary_node → tool_selector → [4개 도구] → result_processor 
 **노드 수**: 8개
 **조건부 엣지**: 2개 (tool_selector, result_processor)
 
-### After (Phase 03)
+### After (Phase 03-3: Tool Calling)
 
 ```
 START → summary_node → llm_node → tool_node → llm_node → ... → END
@@ -123,6 +117,16 @@ START → summary_node → llm_node → tool_node → llm_node → ... → END
 ```
 
 **노드 수**: 3개
+**조건부 엣지**: 1개 (tools_condition)
+
+### After (Phase 03-5: Thinking 활성화 시)
+
+```
+START → summary_node → llm_node ⇄ tool_node → ... → END
+```
+
+**그래프 구조 변경 없음** — `ChatGoogleGenerativeAI`가 `thinking_budget`을 네이티브 지원하므로 별도 노드 불필요.
+**노드 수**: 3개 (03-3과 동일)
 **조건부 엣지**: 1개 (tools_condition)
 
 ---

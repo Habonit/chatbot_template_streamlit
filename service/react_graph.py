@@ -5,7 +5,7 @@ LangChain 표준 Tool Calling 패턴 사용:
 - ToolNode로 자동 도구 실행
 - tools_condition으로 조건부 라우팅
 """
-from typing import TypedDict, Any, Annotated
+from typing import TypedDict, Any, Annotated, Generator
 from pathlib import Path
 import sqlite3
 
@@ -57,6 +57,34 @@ def extract_text_from_content(content) -> str:
     return str(content)
 
 
+def extract_thought_from_content(content) -> tuple[str, str]:
+    """AIMessage.content에서 사고 과정과 응답 텍스트를 분리
+
+    include_thoughts=True 시 content가 list:
+      [{"type": "text", "text": "...", "thought": True}, ...]
+
+    Returns:
+        (thought_text, response_text)
+    """
+    if not isinstance(content, list):
+        return "", str(content) if content else ""
+
+    thought_parts = []
+    response_parts = []
+
+    for item in content:
+        if isinstance(item, dict):
+            text = item.get("text", "")
+            if item.get("thought"):
+                thought_parts.append(text)
+            elif item.get("type") == "text":
+                response_parts.append(text)
+        elif isinstance(item, str):
+            response_parts.append(item)
+
+    return "\n".join(thought_parts), "".join(response_parts)
+
+
 class ChatState(TypedDict):
     """LangGraph 표준 상태 (Tool Calling 패턴)"""
 
@@ -75,6 +103,10 @@ class ChatState(TypedDict):
     # === Phase 03-3-2: Casual Mode 턴 관리 ===
     normal_turn_count: int  # normal 턴만 카운트 (요약 트리거 기준)
     normal_turn_ids: list[int]  # normal 턴의 turn_id 목록
+
+    # === Phase 04: 교육용 메타데이터 ===
+    graph_path: list[str]  # 실행된 노드 경로 추적
+    summary_triggered: bool  # 요약 실행 여부
 
     # === PDF 컨텍스트 ===
     pdf_description: str
@@ -213,6 +245,8 @@ class ReactGraphBuilder:
         max_output_tokens: int = 8192,
         seed: int = None,
         max_iterations: int = 5,
+        thinking_budget: int = 0,
+        show_thoughts: bool = False,
         search_service: Any = None,
         embedding_service: Any = None,
         embedding_repo: Any = None,
@@ -225,10 +259,19 @@ class ReactGraphBuilder:
         self.max_output_tokens = max_output_tokens
         self.seed = seed
         self.max_iterations = max_iterations
+        self.thinking_budget = thinking_budget
+        self.show_thoughts = show_thoughts
         self.search_service = search_service
         self.embedding_service = embedding_service
         self.embedding_repo = embedding_repo
         self.db_path = db_path or self.DEFAULT_DB_PATH
+
+        # Phase 03-5: thinking 지원 모델 검증
+        THINKING_SUPPORTED_MODELS = ["gemini-2.5-pro", "gemini-2.5-flash"]
+        if thinking_budget > 0 and model not in THINKING_SUPPORTED_MODELS:
+            import warnings
+            warnings.warn(f"{model}은 thinking을 지원하지 않습니다. thinking_budget 무시됨.")
+            self.thinking_budget = 0
 
         # DB 디렉토리 생성
         if self.db_path != ":memory:":
@@ -249,6 +292,12 @@ class ReactGraphBuilder:
         }
         if seed is not None:
             llm_kwargs["seed"] = seed
+
+        # Phase 03-5: thinking 설정
+        if self.thinking_budget > 0:
+            llm_kwargs["thinking_budget"] = self.thinking_budget
+            if self.show_thoughts:
+                llm_kwargs["include_thoughts"] = True
 
         self._llm = ChatGoogleGenerativeAI(**llm_kwargs)
         self._llm_with_tools = None  # build()에서 초기화
@@ -322,11 +371,14 @@ class ReactGraphBuilder:
         session_id = state.get("session_id", "")
         compression_rate = state.get("compression_rate", 0.3)
         summary_history = state.get("summary_history", []).copy()
+        graph_path = state.get("graph_path", []) + ["summary_node"]
 
         # 요약 불필요한 경우 (normal_turn_count 기준, Fallback 포함)
         if not should_summarize(normal_turn_count, turn_count):
             return {
                 "summary_history": summary_history,
+                "summary_triggered": False,
+                "graph_path": graph_path,
             }
 
         # Phase 03-3-2: 요약할 normal 턴 ID (현재 턴 제외, 직전 3개)
@@ -339,6 +391,8 @@ class ReactGraphBuilder:
         if not turns_to_summarize:
             return {
                 "summary_history": summary_history,
+                "summary_triggered": False,
+                "graph_path": graph_path,
             }
 
         # Phase 03-3-3: 전체 턴 범위 및 제외 턴 계산
@@ -365,6 +419,8 @@ class ReactGraphBuilder:
         if not messages_to_summarize:
             return {
                 "summary_history": summary_history,
+                "summary_triggered": False,
+                "graph_path": graph_path,
             }
 
         # 원본 텍스트 길이 계산
@@ -376,6 +432,8 @@ class ReactGraphBuilder:
         if original_chars == 0:
             return {
                 "summary_history": summary_history,
+                "summary_triggered": False,
+                "graph_path": graph_path,
             }
 
         # 요약할 대화 텍스트 구성
@@ -421,6 +479,8 @@ class ReactGraphBuilder:
             "summary_history": summary_history,
             "input_tokens": total_input,
             "output_tokens": total_output,
+            "summary_triggered": True,
+            "graph_path": graph_path,
         }
 
     def _llm_node(self, state: ChatState) -> dict:
@@ -431,6 +491,7 @@ class ReactGraphBuilder:
         - 완료된 raw 턴들 (요약되지 않은 턴)
         - 현재 진행 중인 턴
         """
+        graph_path = state.get("graph_path", []) + ["llm_node"]
         turn_count = state.get("turn_count", 0)
         summary_history = state.get("summary_history", [])
         all_messages = state.get("messages", [])
@@ -475,6 +536,7 @@ class ReactGraphBuilder:
             "messages": [response],  # AIMessage 추가 (tool_calls 포함 가능)
             "input_tokens": state.get("input_tokens", 0) + in_tokens,
             "output_tokens": state.get("output_tokens", 0) + out_tokens,
+            "graph_path": graph_path,
         }
 
     def build(self):
@@ -523,6 +585,163 @@ class ReactGraphBuilder:
         self._graph = builder.compile(checkpointer=self._checkpointer)
         return self._graph
 
+    def _prepare_invocation(
+        self,
+        user_input: str,
+        session_id: str,
+        messages: list = None,
+        summary: str = "",
+        pdf_description: str = "",
+        turn_count: int = 0,
+        summary_history: list = None,
+        compression_rate: float = 0.3,
+        normal_turn_ids: list = None,
+    ) -> tuple[str, dict, dict, list] | None:
+        """invoke()와 stream() 공통 전처리
+
+        Returns:
+            casual인 경우: None (호출측에서 casual 처리)
+            normal인 경우: ("normal", initial_state, config, updated_normal_turn_ids)
+        """
+        if normal_turn_ids is None:
+            normal_turn_ids = []
+
+        from service.reasoning_detector import detect_reasoning_need
+        mode = detect_reasoning_need(user_input)
+
+        if mode == "casual":
+            return None
+
+        # normal 모드
+        updated_normal_turn_ids = normal_turn_ids + [turn_count]
+        normal_turn_count = len(updated_normal_turn_ids)
+
+        self._current_session_id = session_id
+        if self._graph is None:
+            self.build()
+
+        # 메시지 변환 (domain.message.Message → LangChain BaseMessage)
+        converted_messages = []
+        for msg in (messages or []):
+            if hasattr(msg, "role") and hasattr(msg, "content"):
+                if msg.role == "user":
+                    converted_messages.append(HumanMessage(content=msg.content))
+                elif msg.role == "assistant":
+                    converted_messages.append(AIMessage(content=msg.content))
+            elif isinstance(msg, BaseMessage):
+                converted_messages.append(msg)
+
+        user_message = HumanMessage(
+            content=user_input,
+            additional_kwargs={"turn_id": turn_count, "mode": "normal"}
+        )
+        all_messages = converted_messages + [user_message]
+
+        initial_state: ChatState = {
+            "messages": all_messages,
+            "session_id": session_id,
+            "summary": summary,
+            "summary_history": summary_history or [],
+            "turn_count": turn_count,
+            "compression_rate": compression_rate,
+            "pdf_description": pdf_description,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "model_used": self.model_name,
+            "normal_turn_count": normal_turn_count,
+            "normal_turn_ids": updated_normal_turn_ids,
+            # Phase 04: 교육용 메타데이터
+            "graph_path": [],
+            "summary_triggered": False,
+        }
+
+        config = {"configurable": {"thread_id": session_id}}
+
+        return "normal", initial_state, config, updated_normal_turn_ids
+
+    def _extract_current_turn_messages(
+        self, result_messages: list, turn_count: int
+    ) -> list:
+        """현재 턴의 메시지만 추출 (turn_id 기반)"""
+        for i, msg in enumerate(result_messages):
+            if (isinstance(msg, HumanMessage) and
+                getattr(msg, "additional_kwargs", {}).get("turn_id") == turn_count):
+                return result_messages[i:]
+
+        # Fallback: 전체 반환
+        return result_messages
+
+    def _parse_result(
+        self,
+        result_messages: list,
+        turn_count: int,
+    ) -> dict:
+        """invoke()와 stream() done 이벤트에서 공통 사용
+
+        Returns:
+            dict: text, tool_history, tool_results, (thought_process)
+        """
+        final_message = result_messages[-1] if result_messages else None
+        final_text = ""
+        thought_process = ""
+
+        if final_message:
+            raw_content = getattr(final_message, "content", "")
+            if self.show_thoughts:
+                thought_process, final_text = extract_thought_from_content(raw_content)
+            else:
+                final_text = extract_text_from_content(raw_content)
+
+        current_turn_messages = self._extract_current_turn_messages(
+            result_messages, turn_count
+        )
+        tool_history = []
+        tool_results = {}
+        for msg in current_turn_messages:
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                for tc in msg.tool_calls:
+                    tool_history.append(tc["name"])
+            if hasattr(msg, "type") and msg.type == "tool":
+                tool_results[msg.name] = msg.content
+
+        result = {
+            "text": final_text,
+            "tool_history": tool_history,
+            "tool_results": tool_results,
+        }
+        if thought_process:
+            result["thought_process"] = thought_process
+        return result
+
+    def _invoke_casual(self, user_input, summary, summary_history, normal_turn_ids):
+        """casual 모드 invoke (기존 코드 분리)"""
+        casual_prompt = f"""사용자가 "{user_input}"라고 말했습니다.
+자연스럽고 친근하게 짧게 응답해주세요. 분석이나 설명 없이요."""
+
+        content, in_tokens, out_tokens = self._invoke_llm_with_token_tracking(
+            [HumanMessage(content=casual_prompt)]
+        )
+
+        return {
+            "text": content,
+            "tool_history": [],
+            "tool_results": {},
+            "iteration": 0,
+            "model_used": self.model_name,
+            "summary": summary,
+            "summary_history": summary_history or [],
+            "input_tokens": in_tokens,
+            "output_tokens": out_tokens,
+            "total_tokens": in_tokens + out_tokens,
+            "is_casual": True,
+            "normal_turn_ids": normal_turn_ids,
+            "normal_turn_count": len(normal_turn_ids),
+            "mode": "casual",
+            "graph_path": ["casual_bypass"],
+            "summary_triggered": False,
+            "error": None,
+        }
+
     def invoke(
         self,
         user_input: str,
@@ -551,142 +770,226 @@ class ReactGraphBuilder:
         Returns:
             dict: 응답 결과
         """
-        # Phase 03-3-2: normal_turn_ids 초기화
         if normal_turn_ids is None:
             normal_turn_ids = []
 
-        # Fast-path: 일상적 대화는 그래프 실행 없이 바로 응답
-        from service.reasoning_detector import detect_reasoning_need
+        preparation = self._prepare_invocation(
+            user_input, session_id, messages, summary, pdf_description,
+            turn_count, summary_history, compression_rate, normal_turn_ids,
+        )
 
-        mode = detect_reasoning_need(user_input)
-        if mode == "casual":
-            casual_prompt = f"""사용자가 "{user_input}"라고 말했습니다.
-자연스럽고 친근하게 짧게 응답해주세요. 분석이나 설명 없이요."""
-
-            content, in_tokens, out_tokens = self._invoke_llm_with_token_tracking(
-                [HumanMessage(content=casual_prompt)]
+        if preparation is None:
+            return self._invoke_casual(
+                user_input, summary, summary_history, normal_turn_ids
             )
 
-            # Phase 03-3-2: casual은 normal_turn_ids 변경 없이 반환
-            return {
-                "text": content,
-                "tool_history": [],
-                "tool_results": {},
-                "iteration": 0,
-                "model_used": self.model_name,
-                "summary": summary,
-                "summary_history": summary_history or [],
-                "input_tokens": in_tokens,
-                "output_tokens": out_tokens,
-                "total_tokens": in_tokens + out_tokens,
-                "is_casual": True,
-                "normal_turn_ids": normal_turn_ids,  # 변경 없음
-                "normal_turn_count": len(normal_turn_ids),  # 변경 없음
-                "error": None,
-            }
+        mode, initial_state, config, updated_normal_turn_ids = preparation
 
-        # Phase 03-3-2: normal 모드 - turn_id 추가
-        updated_normal_turn_ids = normal_turn_ids + [turn_count]
-        normal_turn_count = len(updated_normal_turn_ids)
-
-        # 세션 ID 저장 (도구에서 사용)
-        self._current_session_id = session_id
-
-        if self._graph is None:
-            self.build()
-
-        # domain.message.Message를 LangChain BaseMessage로 변환
-        converted_messages = []
-        for msg in (messages or []):
-            if hasattr(msg, "role") and hasattr(msg, "content"):
-                # domain.message.Message 타입
-                if msg.role == "user":
-                    converted_messages.append(HumanMessage(content=msg.content))
-                elif msg.role == "assistant":
-                    converted_messages.append(AIMessage(content=msg.content))
-            elif isinstance(msg, BaseMessage):
-                # 이미 LangChain 메시지 타입
-                converted_messages.append(msg)
-
-        # Phase 03-3-2: 사용자 메시지에 turn_id 메타데이터 추가
-        user_message = HumanMessage(
-            content=user_input,
-            additional_kwargs={"turn_id": turn_count, "mode": "normal"}
-        )
-        all_messages = converted_messages + [user_message]
-
-        initial_state: ChatState = {
-            "messages": all_messages,
-            "session_id": session_id,
-            "summary": summary,
-            "summary_history": summary_history or [],
-            "turn_count": turn_count,
-            "compression_rate": compression_rate,
-            "pdf_description": pdf_description,
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "model_used": self.model_name,
-            # Phase 03-3-2: normal 턴 관리
-            "normal_turn_count": normal_turn_count,
-            "normal_turn_ids": updated_normal_turn_ids,
-        }
-
-        config = {"configurable": {"thread_id": session_id}}
         result = self._graph.invoke(initial_state, config)
 
-        # 결과 추출
         result_messages = result.get("messages", [])
-        final_message = result_messages[-1] if result_messages else None
-        final_text = ""
-        if final_message:
-            # Phase 03-3-3: content가 list인 경우 처리 (extras/signature 제외)
-            raw_content = getattr(final_message, "content", "")
-            final_text = extract_text_from_content(raw_content)
-
-        # Phase 03-3-3: 현재 턴 메시지만 추출하여 tool_history 계산
-        # turn_id를 사용하여 현재 턴의 시작점을 정확히 찾음
-        # (SqliteSaver 체크포인트에 이전 턴의 ToolMessage가 포함되어 있어 메시지 수로는 불정확)
-        current_turn_start = None
-        for i, msg in enumerate(result_messages):
-            if (isinstance(msg, HumanMessage) and
-                getattr(msg, "additional_kwargs", {}).get("turn_id") == turn_count):
-                current_turn_start = i
-                break
-
-        if current_turn_start is not None:
-            current_turn_messages = result_messages[current_turn_start:]
-        else:
-            # Fallback: 이전 방식 (turn_id가 없는 경우)
-            prev_message_count = len(converted_messages)
-            current_turn_messages = result_messages[prev_message_count:]
-
-        tool_history = []
-        tool_results = {}
-        iteration = 0
-        for msg in current_turn_messages:  # 현재 턴만!
-            if hasattr(msg, "tool_calls") and msg.tool_calls:
-                for tc in msg.tool_calls:
-                    tool_history.append(tc["name"])
-                    iteration += 1
-            if hasattr(msg, "type") and msg.type == "tool":
-                tool_results[msg.name] = msg.content
+        parsed = self._parse_result(result_messages, turn_count)
 
         input_tokens = result.get("input_tokens", 0)
         output_tokens = result.get("output_tokens", 0)
 
+        # Phase 04: graph_path 강화 (tool_node 추론)
+        graph_path = list(result.get("graph_path", []))
+        if parsed["tool_history"]:
+            enhanced = []
+            llm_count = 0
+            for node in graph_path:
+                if node == "llm_node":
+                    llm_count += 1
+                    if llm_count > 1:  # 2번째+ llm_node = 이전에 tool 호출
+                        enhanced.append("tool_node")
+                enhanced.append(node)
+            graph_path = enhanced
+
         return {
-            "text": final_text,
-            "tool_history": tool_history,
-            "tool_results": tool_results,
-            "iteration": iteration,
+            **parsed,
+            "iteration": len(parsed["tool_history"]),
             "model_used": self.model_name,
             "summary": result.get("summary", ""),
             "summary_history": result.get("summary_history", []),
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "total_tokens": input_tokens + output_tokens,
-            # Phase 03-3-2: normal 턴 정보 반환
             "normal_turn_ids": updated_normal_turn_ids,
-            "normal_turn_count": normal_turn_count,
+            "normal_turn_count": len(updated_normal_turn_ids),
+            "mode": mode,
+            "graph_path": graph_path,
+            "summary_triggered": result.get("summary_triggered", False),
+            "is_casual": False,
             "error": None,
+        }
+
+    def stream(
+        self,
+        user_input: str,
+        session_id: str,
+        messages: list = None,
+        summary: str = "",
+        pdf_description: str = "",
+        turn_count: int = 0,
+        summary_history: list = None,
+        compression_rate: float = 0.3,
+        normal_turn_ids: list = None,
+    ) -> Generator[dict, None, None]:
+        """그래프 스트리밍 실행
+
+        Yields:
+            dict: {"type": "token"|"tool_call"|"tool_result"|"thought"|"done", ...}
+        """
+        if normal_turn_ids is None:
+            normal_turn_ids = []
+
+        preparation = self._prepare_invocation(
+            user_input, session_id, messages, summary, pdf_description,
+            turn_count, summary_history, compression_rate, normal_turn_ids,
+        )
+
+        if preparation is None:
+            yield from self._stream_casual(
+                user_input, summary, summary_history, normal_turn_ids
+            )
+            return
+
+        mode, initial_state, config, updated_normal_turn_ids = preparation
+
+        tool_calls_buffer = []
+
+        for chunk, metadata in self._graph.stream(
+            initial_state, config, stream_mode="messages"
+        ):
+            for event in self._parse_message_chunk(chunk, metadata, tool_calls_buffer):
+                yield event
+
+        # 스트리밍 완료 후 공통 결과 파싱
+        final_state = self._graph.get_state(config).values
+        result_messages = final_state.get("messages", [])
+        parsed = self._parse_result(result_messages, turn_count)
+
+        # Phase 04: graph_path 강화 (tool_node 추론)
+        graph_path = list(final_state.get("graph_path", []))
+        if parsed["tool_history"]:
+            enhanced = []
+            llm_count = 0
+            for node in graph_path:
+                if node == "llm_node":
+                    llm_count += 1
+                    if llm_count > 1:
+                        enhanced.append("tool_node")
+                enhanced.append(node)
+            graph_path = enhanced
+
+        yield {
+            "type": "done",
+            "metadata": {
+                **parsed,
+                "model_used": self.model_name,
+                "summary": final_state.get("summary", ""),
+                "summary_history": final_state.get("summary_history", []),
+                "input_tokens": final_state.get("input_tokens", 0),
+                "output_tokens": final_state.get("output_tokens", 0),
+                "normal_turn_ids": updated_normal_turn_ids,
+                "normal_turn_count": len(updated_normal_turn_ids),
+                "mode": mode,
+                "graph_path": graph_path,
+                "summary_triggered": final_state.get("summary_triggered", False),
+                "is_casual": False,
+            }
+        }
+
+    def _parse_message_chunk(
+        self, chunk, metadata: dict, tool_calls_buffer: list
+    ) -> list[dict]:
+        """stream_mode="messages" 이벤트 파싱
+
+        Returns:
+            list[dict]: 파싱된 이벤트 목록 (0~N개)
+        """
+        from langchain_core.messages import AIMessageChunk, ToolMessage
+
+        events = []
+
+        if isinstance(chunk, AIMessageChunk):
+            # Phase 03-5: thought detection
+            if self.show_thoughts and isinstance(chunk.content, list):
+                for item in chunk.content:
+                    if isinstance(item, dict):
+                        text = item.get("text", "")
+                        if not text:
+                            continue
+                        if item.get("thought"):
+                            events.append({"type": "thought", "content": text})
+                        elif item.get("type") == "text":
+                            events.append({"type": "token", "content": text})
+                if events:
+                    return events
+
+            content = extract_text_from_content(chunk.content)
+            if content:
+                events.append({"type": "token", "content": content})
+
+            if chunk.tool_call_chunks:
+                for tc in chunk.tool_call_chunks:
+                    name = tc.get("name")
+                    if name:
+                        tool_calls_buffer.append({"name": name})
+                        events.append({"type": "tool_call", "name": name})
+
+        elif isinstance(chunk, ToolMessage):
+            events.append({
+                "type": "tool_result",
+                "name": getattr(chunk, "name", "unknown"),
+                "content": str(chunk.content)[:500],
+            })
+
+        return events
+
+    def _stream_casual(
+        self,
+        user_input: str,
+        summary: str,
+        summary_history: list,
+        normal_turn_ids: list,
+    ) -> Generator[dict, None, None]:
+        """일상적 대화 스트리밍"""
+        casual_prompt = f"""사용자가 "{user_input}"라고 말했습니다.
+자연스럽고 친근하게 짧게 응답해주세요. 분석이나 설명 없이요."""
+
+        full_text = ""
+        last_usage = None
+
+        for chunk in self._llm.stream([HumanMessage(content=casual_prompt)]):
+            content = extract_text_from_content(chunk.content) if chunk.content else ""
+            if content:
+                full_text += content
+                yield {"type": "token", "content": content}
+
+            if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
+                last_usage = chunk.usage_metadata
+
+        in_tokens = last_usage.get("input_tokens", 0) if last_usage else 0
+        out_tokens = last_usage.get("output_tokens", 0) if last_usage else 0
+
+        yield {
+            "type": "done",
+            "metadata": {
+                "text": full_text,
+                "tool_history": [],
+                "tool_results": {},
+                "model_used": self.model_name,
+                "summary": summary,
+                "summary_history": summary_history or [],
+                "input_tokens": in_tokens,
+                "output_tokens": out_tokens,
+                "is_casual": True,
+                "normal_turn_ids": normal_turn_ids,
+                "normal_turn_count": len(normal_turn_ids),
+                "mode": "casual",
+                "graph_path": ["casual_bypass"],
+                "summary_triggered": False,
+            }
         }

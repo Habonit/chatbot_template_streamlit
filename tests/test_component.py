@@ -184,15 +184,16 @@ class TestOverviewTab:
         for section in required_sections:
             assert section in content, f"Missing section: {section}"
 
-    def test_get_langgraph_diagram_returns_mermaid_code(self):
-        """get_langgraph_diagram()이 Mermaid 코드를 반환하는지 테스트"""
+    def test_get_langgraph_diagram_returns_markdown(self):
+        """get_langgraph_diagram()이 마크다운을 반환하는지 테스트"""
         from component.overview_tab import get_langgraph_diagram
 
-        mermaid_code = get_langgraph_diagram()
+        markdown = get_langgraph_diagram()
 
-        assert "graph" in mermaid_code.lower() or "flowchart" in mermaid_code.lower()
-        assert "tool_selector" in mermaid_code or "선택" in mermaid_code
-        assert "response_generator" in mermaid_code or "응답" in mermaid_code
+        assert "summary_node" in markdown
+        assert "llm_node" in markdown
+        assert "tool_node" in markdown
+        assert "tools_condition" in markdown
 
     def test_get_tool_info_table_has_all_tools(self):
         """get_tool_info()가 모든 툴 정보를 반환하는지 테스트"""

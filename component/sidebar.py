@@ -114,7 +114,7 @@ def render_sidebar() -> dict:
         reasoning_mode = st.toggle(
             "추론 모드 (Reasoning Mode)",
             value=False,
-            help="복잡한 추론이 필요한 질문에 gemini-2.5-pro 사용",
+            help="복잡한 추론이 필요한 질문에 thinking 활성화",
         )
 
         auto_reasoning = st.toggle(
@@ -123,8 +123,27 @@ def render_sidebar() -> dict:
             help="질문 유형에 따라 자동으로 추론 모드 활성화",
         )
 
+        # Phase 03-5: thinking 설정
         if reasoning_mode:
-            st.caption("📊 추론 모드 활성화 → gemini-2.5-pro 사용")
+            thinking_budget = st.slider(
+                "Thinking Budget",
+                min_value=0,
+                max_value=8192,
+                value=1024,
+                step=128,
+                help="추론에 사용할 토큰 예산 (0: 비활성화, 128+: 활성화)",
+            )
+
+            show_thoughts = st.toggle(
+                "추론 과정 표시",
+                value=False,
+                help="모델의 사고 과정을 UI에 표시",
+            )
+
+            st.caption(f"📊 Thinking budget: {thinking_budget} tokens")
+        else:
+            thinking_budget = 0
+            show_thoughts = False
 
     st.sidebar.divider()
 
@@ -247,4 +266,7 @@ def render_sidebar() -> dict:
         "auto_reasoning": auto_reasoning,
         # Phase 03-3: 요약 압축률
         "compression_rate": compression_rate,
+        # Phase 03-5: thinking 설정
+        "thinking_budget": thinking_budget,
+        "show_thoughts": show_thoughts,
     }
