@@ -150,4 +150,4 @@ class TestRenderPromptsTab:
 
         render_prompts_tab()
 
-        mock_st.title.assert_called_once_with("Prompts")
+        mock_st.header.assert_called_once_with("Prompts")

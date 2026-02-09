@@ -14,7 +14,6 @@ class TestOverviewTab:
         content = get_overview_content()
 
         # 필수 섹션 확인
-        assert "introduction" in content
         assert "quick_start" in content
         assert "features" in content
         assert "settings" in content

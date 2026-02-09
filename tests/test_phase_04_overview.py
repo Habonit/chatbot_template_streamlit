@@ -4,39 +4,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-class TestGetOverviewContent:
-    """get_overview_content() 테스트"""
-
-    def test_get_overview_content_has_sections(self):
-        """모든 필수 섹션 키가 존재하는지 확인"""
-        from component.overview_tab import get_overview_content
-
-        content = get_overview_content()
-
-        expected_keys = ["introduction", "quick_start", "features", "settings", "faq"]
-        for key in expected_keys:
-            assert key in content, f"Missing key: {key}"
-
-    def test_introduction_contains_key_concepts(self):
-        """introduction에 핵심 개념이 언급되는지 확인"""
-        from component.overview_tab import get_overview_content
-
-        content = get_overview_content()
-        intro = content["introduction"]
-
-        expected_concepts = [
-            "ReAct",
-            "Tool Calling",
-            "Streaming",
-            "Thinking Mode",
-            "Context Compression",
-            "Casual Detection",
-            "Session Checkpointing",
-        ]
-        for concept in expected_concepts:
-            assert concept in intro, f"Introduction should mention '{concept}'"
-
-
 class TestGetLanggraphDiagram:
     """get_langgraph_diagram() 테스트"""
 
@@ -190,9 +157,7 @@ class TestRenderOverviewTab:
 
             render_overview_tab()
 
-            # 기본 호출 확인
-            mock_st.title.assert_called_once_with("Gemini Hybrid Chatbot")
-            mock_st.caption.assert_any_call("AI 챗봇 핵심 개념 교육 데모")
+            # 기본 호출 확인 (title/caption은 app.py로 이동됨)
             mock_st.divider.assert_called()
 
 

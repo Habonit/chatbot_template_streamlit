@@ -163,20 +163,6 @@ graph LR
 def get_overview_content() -> dict:
     """Overview 탭에 표시할 콘텐츠 반환"""
     return {
-        "introduction": """
-## Gemini Hybrid Chatbot
-
-이 앱은 **현대 AI 챗봇의 핵심 개념들**이 어떻게 구현되고 동작하는지 교육적으로 보여주는 데모입니다.
-
-### 적용된 핵심 기술
-- **ReAct 패턴**: LLM의 Reasoning + Acting 반복으로 복잡한 질문 처리
-- **Tool Calling**: LangChain 표준 패턴으로 4개 도구 자동 선택 및 실행
-- **Context Compression**: 3턴마다 대화 요약으로 장기 대화 지원
-- **Streaming**: 실시간 토큰 스트리밍으로 응답 대기 시간 최소화
-- **Thinking Mode**: 모델의 사고 과정 시각화
-- **Casual Detection**: 입력 유형별 자동 모드 분류 (casual/normal)
-- **Session Checkpointing**: SqliteSaver 기반 자동 상태 저장
-""",
         "quick_start": """
 ### 1. API Key 설정
 1. 사이드바의 **API Keys** 섹션을 엽니다
@@ -256,12 +242,7 @@ def render_overview_tab() -> None:
 
     content = get_overview_content()
 
-    # 1. 소개 (직접 표시, expander 제거)
-    st.title("Gemini Hybrid Chatbot")
-    st.caption("AI 챗봇 핵심 개념 교육 데모")
-    st.markdown(content["introduction"])
-
-    # 2. 핵심 개념 카드 (2열 그리드)
+    # 1. 핵심 개념 카드 (2열 그리드)
     st.markdown("### 핵심 개념")
     cards = get_concept_cards()
     for i in range(0, len(cards), 2):

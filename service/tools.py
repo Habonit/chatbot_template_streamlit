@@ -18,6 +18,8 @@ def create_tools_with_services(
     embedding_repo: Any = None,
     session_id: str = "",
     llm: Any = None,
+    reasoning_llm: Any = None,
+    show_thoughts: bool = False,
     search_depth: str = "basic",
     max_results: int = 5,
 ) -> list:
@@ -28,7 +30,9 @@ def create_tools_with_services(
         embedding_service: 임베딩 서비스
         embedding_repo: 임베딩 저장소
         session_id: 세션 ID
-        llm: LLM 인스턴스 (reasoning용)
+        llm: 메인 LLM 인스턴스 (fallback용)
+        reasoning_llm: reasoning 전용 LLM (thinking 활성화)
+        show_thoughts: reasoning 도구 thought 포함 여부
 
     Returns:
         list: 서비스가 주입된 도구 목록
@@ -84,14 +88,42 @@ def create_tools_with_services(
             question: 분석할 질문
             context: 참고할 맥락 정보 (선택)
         """
-        if llm:
-            from langchain_core.messages import HumanMessage
-            from prompt.tools.reasoning import get_prompt as get_reasoning_prompt
+        import json
+        from langchain_core.messages import HumanMessage
+        from prompt.tools.reasoning import get_prompt as get_reasoning_prompt
+        from service.react_graph import extract_thought_from_content
 
+        target_llm = reasoning_llm or llm
+        if not target_llm:
+            return "추론 도구가 설정되지 않았습니다."
+
+        try:
             prompt = get_reasoning_prompt(user_input=question, context=context)
-            response = llm.invoke([HumanMessage(content=prompt)])
+            response = target_llm.invoke([HumanMessage(content=prompt)])
+
+            if isinstance(response.content, list):
+                thought, text = extract_thought_from_content(response.content)
+                if show_thoughts and thought:
+                    result = {"thought": thought, "analysis": text}
+                    if hasattr(response, "usage_metadata") and response.usage_metadata:
+                        result["reasoning_tokens"] = {
+                            "input": response.usage_metadata.get("input_tokens", 0),
+                            "output": response.usage_metadata.get("output_tokens", 0),
+                            "thinking": response.usage_metadata.get(
+                                "output_token_details", {}
+                            ).get("reasoning", 0),
+                        }
+                    return json.dumps(result, ensure_ascii=False)
+                return text
             return response.content
-        return "추론 도구가 설정되지 않았습니다."
+        except Exception as e:
+            if target_llm is not llm and llm:
+                try:
+                    response = llm.invoke([HumanMessage(content=prompt)])
+                    return response.content
+                except Exception:
+                    pass
+            return f"추론 중 오류 발생: {str(e)}"
 
     return [
         get_current_time,
