@@ -1,5 +1,10 @@
 import streamlit as st
 from domain.message import Message
+from component.education_tips import (
+    get_prompt_education, get_streaming_education,
+    get_summary_education, get_thinking_education,
+    get_tool_education,
+)
 
 
 def format_summary_card(summary_entry: dict) -> str:
@@ -31,6 +36,39 @@ def format_summary_card(summary_entry: dict) -> str:
         excluded_str = ""
 
     return f"**Turn {turns_str}**{excluded_str}\n\n{summary}"
+
+
+def _render_welcome_state():
+    """메시지가 없을 때 교육적 Welcome 가이드 표시"""
+    st.markdown(
+        '<div class="welcome-card">'
+        "<h3>대화를 시작하세요</h3>"
+        "<p>아래 입력창에 질문을 입력하면 AI가 응답합니다.</p>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("**예시 질문:**")
+    cols = st.columns(3)
+    examples = [
+        "오늘 날짜가 뭐야?",
+        "Python과 JavaScript의 차이점을 비교해줘",
+        "최신 AI 트렌드를 검색해줘",
+    ]
+    for col, example in zip(cols, examples):
+        col.markdown(f"- {example}")
+
+    st.caption(
+        "동작 원리: 사용자 입력 → 모드 감지 (casual/normal) "
+        "→ LLM 호출 + 도구 사용 → 응답 생성"
+    )
+
+    # Phase 05: 스트리밍 개념 교육
+    streaming_edu = get_streaming_education()
+    with st.expander(f"⚡ {streaming_edu['title']}", expanded=False):
+        st.caption(streaming_edu["explanation"])
+        for term in streaming_edu["terms"]:
+            st.caption(f"• **{term['term']}**: {term['desc']}")
 
 
 def _handle_streaming_response(on_stream: callable, user_input: str) -> dict:
@@ -99,6 +137,8 @@ def _handle_streaming_response(on_stream: callable, user_input: str) -> dict:
         "graph_path": metadata.get("graph_path", []),
         "summary_triggered": metadata.get("summary_triggered", False),
         "is_casual": metadata.get("is_casual", False),
+        # Phase 05: actual_prompts
+        "actual_prompts": metadata.get("actual_prompts", {}),
     }
 
 
@@ -107,7 +147,6 @@ def _mode_badge(mode: str) -> str:
     badges = {
         "casual": "🟢 casual",
         "normal": "🔵 normal",
-        "reasoning": "🟣 reasoning",
     }
     return badges.get(mode, f"⚪ {mode}")
 
@@ -140,6 +179,37 @@ def _render_turn_metadata(msg: Message) -> None:
             st.markdown(f"🧠 **Thinking:** budget {msg.thinking_budget}")
 
         st.caption(f"📈 Tokens: {msg.input_tokens} in / {msg.output_tokens} out")
+
+        # Phase 05: 교육 팁
+        st.divider()
+
+        # 1. 프롬프트 교육
+        prompt_edu = get_prompt_education(msg.actual_prompts)
+        if prompt_edu:
+            st.markdown(f"**📜 {prompt_edu['title']}**")
+            st.caption(prompt_edu["explanation"])
+            with st.expander("시스템 프롬프트 보기", expanded=False):
+                st.code(prompt_edu["system_prompt_preview"], language=None)
+
+        # 2. 요약/컨텍스트 교육
+        summary_edu = get_summary_education(msg.summary_triggered, [])
+        if summary_edu:
+            st.markdown(f"**🧠 {summary_edu['title']}**")
+            st.caption(summary_edu["explanation"])
+
+        # 3. Thinking 교육
+        thinking_edu = get_thinking_education(msg.thinking_budget, msg.thought_process)
+        if thinking_edu:
+            st.markdown(f"**💭 {thinking_edu['title']}**")
+            st.caption(thinking_edu["explanation"])
+
+        # 4. 도구 교육
+        tool_names = [fc.get("name", "") for fc in msg.function_calls]
+        tool_edu = get_tool_education(tool_names)
+        if tool_edu:
+            st.markdown(f"**🔧 {tool_edu['title']}**")
+            for item in tool_edu["explanations"]:
+                st.caption(f"• **{item['tool']}**: {item['desc']}")
 
 
 def render_chat_tab(
@@ -175,30 +245,34 @@ def render_chat_tab(
         chat_container = st.container()
 
         with chat_container:
-            for msg in messages:
-                role = "user" if msg.role == "user" else "assistant"
-                with st.chat_message(role):
-                    st.markdown(msg.content)
+            # Welcome State: 메시지가 없을 때 교육적 가이드 표시
+            if not messages:
+                _render_welcome_state()
+            else:
+                for msg in messages:
+                    role = "user" if msg.role == "user" else "assistant"
+                    with st.chat_message(role):
+                        st.markdown(msg.content)
 
-                    if msg.role == "assistant":
-                        # 툴 사용 정보 Expander (Phase 02)
-                        if msg.function_calls or msg.tool_results:
-                            with st.expander("🔧 툴 사용 정보", expanded=False):
-                                if msg.function_calls:
-                                    tool_names = [fc.get("name", "unknown") for fc in msg.function_calls]
-                                    st.markdown(f"**선택된 툴:** {', '.join(tool_names)}")
-                                    st.divider()
+                        if msg.role == "assistant":
+                            # 툴 사용 정보 Expander (Phase 02)
+                            if msg.function_calls or msg.tool_results:
+                                with st.expander("🔧 툴 사용 정보", expanded=False):
+                                    if msg.function_calls:
+                                        tool_names = [fc.get("name", "unknown") for fc in msg.function_calls]
+                                        st.markdown(f"**선택된 툴:** {', '.join(tool_names)}")
+                                        st.divider()
 
-                                if msg.tool_results:
-                                    for tool_name, result in msg.tool_results.items():
-                                        st.markdown(f"📌 **[{tool_name}]**")
-                                        if isinstance(result, dict):
-                                            st.json(result)
-                                        else:
-                                            st.code(str(result), language=None)
+                                    if msg.tool_results:
+                                        for tool_name, result in msg.tool_results.items():
+                                            st.markdown(f"📌 **[{tool_name}]**")
+                                            if isinstance(result, dict):
+                                                st.json(result)
+                                            else:
+                                                st.code(str(result), language=None)
 
-                        # Phase 04: 실행 상세 메타데이터
-                        _render_turn_metadata(msg)
+                            # Phase 04: 실행 상세 메타데이터
+                            _render_turn_metadata(msg)
 
     # 오른쪽 컬럼: 요약 히스토리
     with summary_col:
@@ -208,7 +282,8 @@ def render_chat_tab(
                 with st.container(border=True):
                     st.markdown(format_summary_card(entry))
         else:
-            st.caption("대화 요약이 3턴마다 생성됩니다.")
+            st.caption("대화가 진행되면 3턴마다 자동으로 요약이 생성됩니다. "
+                       "요약은 컨텍스트 관리에 사용되어 긴 대화에서도 일관된 응답을 유지합니다.")
 
     # 채팅 입력창 (컬럼 외부에 배치)
     user_input = st.chat_input("메시지를 입력하세요...")

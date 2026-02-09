@@ -7,11 +7,14 @@ def get_langgraph_diagram() -> str:
 | 순서 | 노드 | 역할 | 다음 단계 |
 |:---:|------|------|----------|
 | 1 | **START** | 그래프 진입점 | → summary_node |
-| 2 | **summary_node** | Context Compression (3턴마다 대화 요약) | → llm_node |
-| 3 | **llm_node** | LLM 추론 + `bind_tools()` | → tools_condition 분기 |
-| 4a | **tool_node** | ToolNode 실행 (도구 호출 시) | → llm_node (재추론) |
-| 4b | **END** | 그래프 종료 (도구 호출 없을 시) | - |
+| 2 | **summary_node** | Context Compression (3턴마다 대화 요약) | → router_node |
+| 3 | **router_node** | 모드 감지 (casual/normal) | → casual_node 또는 llm_node |
+| 4a | **casual_node** | casual 모드 LLM 직접 호출 | → END |
+| 4b | **llm_node** | LLM 추론 + `bind_tools()` | → tools_condition 분기 |
+| 5a | **tool_node** | ToolNode 실행 (도구 호출 시) | → llm_node (재추론) |
+| 5b | **END** | 그래프 종료 (도구 호출 없을 시) | - |
 
+> **router_node**: `detect_reasoning_need()`로 모드를 판별하여 casual이면 casual_node, 아니면 llm_node로 라우팅
 > **tools_condition**: llm_node의 응답에 tool_calls가 포함되면 → tool_node, 없으면 → END
 """
 
@@ -29,22 +32,25 @@ graph TB
     end
     subgraph Service["Service Layer"]
         graph_builder["ReactGraphBuilder"]
-        reasoning_detector["ReasoningDetector"]
+        mode_detector["ModeDetector"]
         session_mgr["SessionManager"]
         llm_service["LLMService"]
         rag_service["RAGService"]
     end
     subgraph LangGraph["LangGraph ReAct Graph"]
-        summary_node["summary_node"] --> llm_node["llm_node"]
+        summary_node["summary_node"] --> router_node["router_node"]
+        router_node -->|casual| casual_node["casual_node"]
+        router_node -->|normal| llm_node["llm_node"]
+        casual_node --> END_NODE["END"]
         llm_node -->|tools_condition| tool_node["tool_node"]
         tool_node --> llm_node
-        llm_node --> END_NODE["END"]
+        llm_node --> END_NODE
     end
     chat --> graph_builder
     sidebar --> graph_builder
     graph_builder --> LangGraph
     pdf --> rag_service
-    chat --> reasoning_detector
+    chat --> mode_detector
 """
 
 
@@ -61,7 +67,7 @@ def get_concept_cards() -> list[dict]:
             "title": "Tool Calling",
             "emoji": "🔧",
             "description": "`bind_tools()` + `ToolNode` + `tools_condition`으로 구현된 LangChain 표준 Tool Calling 패턴입니다.",
-            "detail": "4개 도구가 LLM에 바인딩됩니다:\n- `get_current_time`: 현재 시각 (KST)\n- `switch_to_reasoning`: 추론 모드 전환 (gemini-2.5-pro)\n- `web_search`: Tavily 웹 검색\n- `search_pdf_knowledge`: PDF RAG 검색\n\nLLM은 자동으로 적합한 도구를 선택하여 호출합니다.",
+            "detail": "4개 도구가 LLM에 바인딩됩니다:\n- `get_current_time`: 현재 시각 (KST)\n- `reasoning`: 단계별 추론 분석\n- `web_search`: Tavily 웹 검색\n- `search_pdf_knowledge`: PDF RAG 검색\n\nLLM은 자동으로 적합한 도구를 선택하여 호출합니다.",
         },
         {
             "title": "Context Compression",
@@ -84,8 +90,8 @@ def get_concept_cards() -> list[dict]:
         {
             "title": "Casual Detection",
             "emoji": "💬",
-            "description": "`ReasoningDetector`가 패턴 매칭으로 casual/normal/reasoning 모드를 분류합니다.",
-            "detail": "casual 모드는 그래프를 거치지 않고 직접 LLM 호출합니다 (casual_bypass). 인사, 감탄사, 짧은 입력 등이 casual로 분류됩니다. reasoning 모드는 복잡한 분석/비교/수학 등에 활성화됩니다.",
+            "description": "`ModeDetector`가 패턴 매칭으로 casual/normal 모드를 분류합니다.",
+            "detail": "`summary_node` 다음에 `router_node`가 모드를 판별합니다. casual이면 `casual_node`로, 아니면 `llm_node`로 라우팅됩니다. 인사, 감탄사, 짧은 입력 등이 casual로 분류됩니다. 복잡한 추론은 thinking_budget으로 제어됩니다.",
         },
         {
             "title": "Session & Checkpointing",
@@ -106,8 +112,8 @@ def get_tool_info() -> list[dict]:
             "bind_method": "bind_tools()",
         },
         {
-            "name": "switch_to_reasoning",
-            "description": "추론 모드 전환 (gemini-2.5-pro)",
+            "name": "reasoning",
+            "description": "단계별 추론 분석",
             "condition": "복잡한 분석, 비교, 수학 계산",
             "bind_method": "bind_tools()",
         },
@@ -168,12 +174,10 @@ def get_overview_content() -> dict:
 - **Context Compression**: 3턴마다 대화 요약으로 장기 대화 지원
 - **Streaming**: 실시간 토큰 스트리밍으로 응답 대기 시간 최소화
 - **Thinking Mode**: 모델의 사고 과정 시각화
-- **Casual Detection**: 입력 유형별 자동 모드 분류 (casual/normal/reasoning)
+- **Casual Detection**: 입력 유형별 자동 모드 분류 (casual/normal)
 - **Session Checkpointing**: SqliteSaver 기반 자동 상태 저장
 """,
         "quick_start": """
-## 시작하기
-
 ### 1. API Key 설정
 1. 사이드바의 **API Keys** 섹션을 엽니다
 2. **Gemini API Key** 입력 (Google AI Studio에서 발급)
@@ -191,13 +195,11 @@ def get_overview_content() -> dict:
 4. 처리 완료 후 Chat 탭에서 PDF 관련 질문을 할 수 있습니다
 """,
         "features": """
-## 주요 기능
-
 ### Chat 기능
 - **일반 대화**: 자연스러운 대화형 AI 응답
 - **PDF 기반 Q&A**: 업로드된 PDF 문서에서 관련 정보를 검색하여 답변
 - **웹 검색**: Tavily API를 통해 최신 정보를 검색하여 답변에 반영
-- **자동 모델 전환**: 복잡한 질문 시 자동으로 추론 모델(Pro)로 전환
+- **추론 도구**: 복잡한 질문 시 단계별 분석 도구 자동 호출
 
 ### PDF 전처리
 - **텍스트 추출**: PDF에서 텍스트 추출
@@ -211,9 +213,7 @@ def get_overview_content() -> dict:
 - **대화 다운로드**: CSV 형식으로 대화 내역 다운로드
 """,
         "settings": """
-## 설정 가이드
-
-### Model Settings
+### Model & Reasoning
 | 설정 | 설명 | 범위 |
 |------|------|------|
 | **Chat Model** | 사용할 Gemini 모델 선택 | gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash |
@@ -221,7 +221,7 @@ def get_overview_content() -> dict:
 | **Top-p** | 누적 확률 기반 토큰 선택 | 0.0 ~ 1.0 (기본: 0.9) |
 | **Max Output Tokens** | 최대 출력 토큰 수 | 256 ~ 65,536 (기본: 8,192) |
 
-### External Search
+### Search
 | 설정 | 설명 |
 |------|------|
 | **Enable Tavily Search** | 웹 검색 기능 활성화/비활성화 |
@@ -229,22 +229,20 @@ def get_overview_content() -> dict:
 | **Max Results** | 검색 결과 최대 개수 (1~10) |
 """,
         "faq": """
-## FAQ
-
-### Q: API Key는 어디서 얻나요?
+**Q: API Key는 어디서 얻나요?**
 - **Gemini API Key**: [Google AI Studio](https://aistudio.google.com/)에서 발급
 - **Tavily API Key**: [Tavily](https://tavily.com/)에서 발급
 
-### Q: PDF 전처리는 왜 필요한가요?
+**Q: PDF 전처리는 왜 필요한가요?**
 PDF 전처리를 통해 문서의 내용을 벡터 임베딩으로 변환합니다. 이를 통해 질문과 관련된 문서 내용을 빠르게 검색할 수 있습니다.
 
-### Q: 세션을 바꾸면 데이터가 사라지나요?
+**Q: 세션을 바꾸면 데이터가 사라지나요?**
 아니요. 각 세션의 대화 내역, 토큰 사용량, PDF 데이터 등은 모두 저장됩니다. 세션 전환 시 해당 세션의 데이터가 로드됩니다.
 
-### Q: 토큰 제한은 어떻게 되나요?
+**Q: 토큰 제한은 어떻게 되나요?**
 환경 변수 `TOKEN_LIMIT_K`로 설정할 수 있습니다 (기본: 256K). 토큰 사용량이 80%를 초과하면 경고가 표시되며, 100% 초과 시 새 세션을 시작해야 합니다.
 
-### Q: 어떤 모델을 선택해야 하나요?
+**Q: 어떤 모델을 선택해야 하나요?**
 - **gemini-2.5-flash**: 빠른 응답, 일반적인 대화에 적합 (권장)
 - **gemini-2.5-pro**: 복잡한 추론, 분석 작업에 적합
 - **gemini-2.0-flash**: 이전 버전 (2026년 3월 종료 예정)
@@ -258,33 +256,36 @@ def render_overview_tab() -> None:
 
     content = get_overview_content()
 
+    # 1. 소개 (직접 표시, expander 제거)
     st.title("Gemini Hybrid Chatbot")
     st.caption("AI 챗봇 핵심 개념 교육 데모")
+    st.markdown(content["introduction"])
 
-    # 1. 소개
-    with st.expander("앱 소개", expanded=True):
-        st.markdown(content["introduction"])
+    # 2. 핵심 개념 카드 (2열 그리드)
+    st.markdown("### 핵심 개념")
+    cards = get_concept_cards()
+    for i in range(0, len(cards), 2):
+        cols = st.columns(2)
+        for j, col in enumerate(cols):
+            idx = i + j
+            if idx < len(cards):
+                card = cards[idx]
+                with col:
+                    with st.container(border=True):
+                        st.markdown(f"#### {card['emoji']} {card['title']}")
+                        st.markdown(card["description"])
+                        st.markdown(f"*{card['detail']}*")
 
-    # 2. 아키텍처 다이어그램
+    # 3. 아키텍처 다이어그램
     with st.expander("🏗️ 앱 아키텍처", expanded=False):
         st.markdown("### 전체 구조")
         st.markdown("Streamlit UI → Service Layer → LangGraph ReAct Graph")
         st_mermaid(get_architecture_diagram())
 
-    # 3. 핵심 개념 카드
-    with st.expander("📚 핵심 개념", expanded=False):
-        st.markdown("### AI 챗봇 핵심 기술")
-        cards = get_concept_cards()
-        for card in cards:
-            with st.container(border=True):
-                st.markdown(f"#### {card['emoji']} {card['title']}")
-                st.markdown(card["description"])
-                st.caption(card["detail"])
-
     # 4. LangGraph 워크플로우
     with st.expander("🔄 LangGraph 워크플로우", expanded=False):
         st.markdown("### ReAct 그래프 실행 흐름")
-        st.markdown("사용자 입력 → summary_node → llm_node → (tool_node ↔ llm_node) → END")
+        st.markdown("사용자 입력 → summary_node → router_node → casual_node → END 또는 llm_node → (tool_node ↔ llm_node) → END")
         st.markdown(get_langgraph_diagram())
 
     # 5. 툴 콜링 구성
@@ -296,6 +297,9 @@ def render_overview_tab() -> None:
     with st.expander("시작하기 (Quick Start)", expanded=False):
         st.markdown(content["quick_start"])
 
+    with st.expander("주요 기능", expanded=False):
+        st.markdown(content["features"])
+
     with st.expander("설정 가이드", expanded=False):
         st.markdown(content["settings"])
 
@@ -303,4 +307,4 @@ def render_overview_tab() -> None:
         st.markdown(content["faq"])
 
     st.divider()
-    st.caption("버전: 2.0.0 | Phase 04 | 마지막 업데이트: 2026-02-07")
+    st.caption("버전: 2.1.0 | Phase 04+ | 마지막 업데이트: 2026-02-08")

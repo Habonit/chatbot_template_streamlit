@@ -190,6 +190,8 @@ class TestOverviewTab:
 
         markdown = get_langgraph_diagram()
 
+        assert "router_node" in markdown
+        assert "casual_node" in markdown
         assert "summary_node" in markdown
         assert "llm_node" in markdown
         assert "tool_node" in markdown
@@ -203,7 +205,7 @@ class TestOverviewTab:
 
         expected_tools = [
             "get_current_time",
-            "switch_to_reasoning",
+            "reasoning",
             "web_search",
             "search_pdf_knowledge",
         ]
@@ -287,7 +289,7 @@ class TestChatTabSummary:
 
         # 비연속이므로 "1, 3, 4" 형식
         assert "Turn 1, 3, 4" in result
-        assert "2턴 제외" in result
+        assert "2턴 casual" in result
 
     def test_format_summary_card_with_excluded_turns(self):
         """excluded_turns 표시 테스트 (Phase 03-3-2)"""
@@ -302,7 +304,7 @@ class TestChatTabSummary:
 
         result = format_summary_card(summary_entry)
 
-        assert "2턴 제외" in result
+        assert "2턴 casual" in result
 
     def test_get_summary_history_empty(self):
         """빈 요약 히스토리 테스트"""

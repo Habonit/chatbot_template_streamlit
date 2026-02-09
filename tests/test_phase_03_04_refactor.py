@@ -4,7 +4,6 @@ invoke()에서 추출한 공통 메서드 테스트:
 - _prepare_invocation: 공통 전처리
 - _extract_current_turn_messages: 현재 턴 추출
 - _parse_result: 공통 결과 파싱
-- _invoke_casual: casual 모드 분리
 - _create_graph_builder: 팩토리 함수
 """
 import pytest
@@ -13,55 +12,51 @@ from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 
 
 class TestPrepareInvocation:
-    """_prepare_invocation 메서드 테스트"""
+    """_prepare_invocation 메서드 테스트 (Router Node 통합 후)"""
 
-    def test_prepare_invocation_casual(self):
-        """casual 입력 시 None 반환"""
+    def test_prepare_invocation_always_returns_tuple(self):
+        """모든 입력에 대해 (state, config) 2-튜플 반환"""
         from service.react_graph import ReactGraphBuilder
 
         builder = ReactGraphBuilder(api_key="test-key")
         result = builder._prepare_invocation("안녕!", session_id="test")
-        assert result is None
-
-    def test_prepare_invocation_normal(self):
-        """normal 입력 시 (mode, state, config, turn_ids) 반환"""
-        from service.react_graph import ReactGraphBuilder
-
-        builder = ReactGraphBuilder(api_key="test-key")
-        result = builder._prepare_invocation(
-            "지금 몇 시야?", session_id="test", turn_count=1
-        )
         assert result is not None
-        mode, state, config, turn_ids = result
-        assert mode == "normal"
+        state, config = result
         assert isinstance(state, dict)
         assert isinstance(config, dict)
-        assert turn_ids == [1]
 
-    def test_prepare_invocation_normal_turn_ids(self):
-        """normal 모드에서 turn_ids 업데이트 확인"""
+    def test_prepare_invocation_normal(self):
+        """normal 입력 시 (state, config) 반환"""
         from service.react_graph import ReactGraphBuilder
 
         builder = ReactGraphBuilder(api_key="test-key")
-        result = builder._prepare_invocation(
+        state, config = builder._prepare_invocation(
+            "지금 몇 시야?", session_id="test", turn_count=1
+        )
+        assert isinstance(state, dict)
+        assert isinstance(config, dict)
+
+    def test_prepare_invocation_does_not_update_turn_ids(self):
+        """_prepare_invocation은 normal_turn_ids를 업데이트하지 않음 (router_node에서 처리)"""
+        from service.react_graph import ReactGraphBuilder
+
+        builder = ReactGraphBuilder(api_key="test-key")
+        state, _ = builder._prepare_invocation(
             "검색해줘", session_id="test",
             turn_count=3, normal_turn_ids=[1, 2]
         )
-        assert result is not None
-        _, _, _, turn_ids = result
-        assert turn_ids == [1, 2, 3]
+        assert state["normal_turn_ids"] == [1, 2]
 
     def test_prepare_invocation_builds_state(self):
-        """normal 모드에서 initial_state 구성 확인"""
+        """initial_state 구성 확인"""
         from service.react_graph import ReactGraphBuilder
 
         builder = ReactGraphBuilder(api_key="test-key")
-        result = builder._prepare_invocation(
+        state, config = builder._prepare_invocation(
             "파이썬 설명해줘", session_id="test-session",
             turn_count=2, summary="이전 요약",
             pdf_description="PDF 설명",
         )
-        _, state, config, _ = result
         assert state["session_id"] == "test-session"
         assert state["summary"] == "이전 요약"
         assert state["pdf_description"] == "PDF 설명"
@@ -78,11 +73,10 @@ class TestPrepareInvocation:
             Message(turn_id=1, role="user", content="Hello"),
             Message(turn_id=1, role="assistant", content="Hi there"),
         ]
-        result = builder._prepare_invocation(
+        state, _ = builder._prepare_invocation(
             "설명해줘", session_id="test",
             messages=messages, turn_count=2
         )
-        _, state, _, _ = result
         # converted messages + user_message
         assert len(state["messages"]) == 3
         assert isinstance(state["messages"][0], HumanMessage)
@@ -192,64 +186,43 @@ class TestParseResult:
         assert result["tool_results"] == {}
 
 
-class TestInvokeCasual:
-    """_invoke_casual 메서드 테스트"""
-
-    def test_invoke_casual_exists(self):
-        """_invoke_casual 메서드 존재"""
-        from service.react_graph import ReactGraphBuilder
-
-        builder = ReactGraphBuilder(api_key="test-key")
-        assert hasattr(builder, "_invoke_casual")
-        assert callable(builder._invoke_casual)
-
-    def test_invoke_casual_returns_dict(self):
-        """casual 결과 반환 형태"""
-        from service.react_graph import ReactGraphBuilder
-
-        builder = ReactGraphBuilder(api_key="test-key")
-        with patch.object(
-            builder, "_invoke_llm_with_token_tracking",
-            return_value=("안녕하세요!", 10, 5)
-        ):
-            result = builder._invoke_casual("안녕", "", [], [])
-        assert result["text"] == "안녕하세요!"
-        assert result["is_casual"] is True
-        assert result["tool_history"] == []
-        assert result["error"] is None
-
-    def test_invoke_casual_preserves_normal_turn_ids(self):
-        """casual은 normal_turn_ids 변경 없음"""
-        from service.react_graph import ReactGraphBuilder
-
-        builder = ReactGraphBuilder(api_key="test-key")
-        with patch.object(
-            builder, "_invoke_llm_with_token_tracking",
-            return_value=("네!", 5, 3)
-        ):
-            result = builder._invoke_casual("네", "", [], [1, 2])
-        assert result["normal_turn_ids"] == [1, 2]
-        assert result["normal_turn_count"] == 2
-
-
 class TestInvokeRefactored:
     """리팩토링된 invoke() 테스트"""
 
     def test_invoke_refactored_casual(self):
-        """리팩토링 후 casual 동작 동일"""
+        """리팩토링 후 casual 동작 (그래프 통합)"""
         from service.react_graph import ReactGraphBuilder
+        from langchain_google_genai import ChatGoogleGenerativeAI
 
         builder = ReactGraphBuilder(api_key="test-key")
         builder.build()
 
-        with patch.object(
-            builder, "_invoke_llm_with_token_tracking",
-            return_value=("반가워요!", 10, 5)
-        ):
+        mock_response = MagicMock()
+        mock_response.content = "반가워요!"
+        mock_response.usage_metadata = {"input_tokens": 10, "output_tokens": 5}
+
+        mock_result = {
+            "messages": [
+                HumanMessage(content="오호"),
+                mock_response,
+            ],
+            "summary": "",
+            "summary_history": [],
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "mode": "casual",
+            "is_casual": True,
+            "normal_turn_ids": [],
+            "normal_turn_count": 0,
+            "graph_path": ["summary_node", "router_node", "casual_node"],
+            "summary_triggered": False,
+        }
+
+        with patch.object(builder._graph, "invoke", return_value=mock_result):
             result = builder.invoke("오호", session_id="test", turn_count=1)
 
-        assert result["text"] == "반가워요!"
         assert result["is_casual"] is True
+        assert result["mode"] == "casual"
         assert result["error"] is None
 
     def test_invoke_refactored_normal(self):
@@ -268,6 +241,12 @@ class TestInvokeRefactored:
             "summary_history": [],
             "input_tokens": 100,
             "output_tokens": 50,
+            "mode": "normal",
+            "is_casual": False,
+            "normal_turn_ids": [1],
+            "normal_turn_count": 1,
+            "graph_path": ["summary_node", "router_node", "llm_node"],
+            "summary_triggered": False,
         }
 
         with patch.object(builder._graph, "invoke", return_value=mock_result):

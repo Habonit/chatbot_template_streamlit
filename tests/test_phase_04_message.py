@@ -57,11 +57,6 @@ class TestMessageExplicitValues:
         msg = Message(turn_id=1, role="assistant", content="test", mode="casual")
         assert msg.mode == "casual"
 
-    def test_message_with_reasoning_mode(self):
-        """reasoning mode 설정"""
-        msg = Message(turn_id=1, role="assistant", content="test", mode="reasoning")
-        assert msg.mode == "reasoning"
-
     def test_message_with_graph_path(self):
         """graph_path 명시적 설정"""
         path = ["summary_node", "llm_node", "tool_node", "llm_node"]
@@ -142,11 +137,11 @@ class TestMessageAllFieldsPopulated:
             role="assistant",
             content="안녕하세요!",
             mode="casual",
-            graph_path=["casual_bypass"],
+            graph_path=["summary_node", "router_node", "casual_node"],
             summary_triggered=False,
             is_casual=True,
         )
         assert msg.mode == "casual"
-        assert msg.graph_path == ["casual_bypass"]
+        assert msg.graph_path == ["summary_node", "router_node", "casual_node"]
         assert msg.summary_triggered is False
         assert msg.is_casual is True

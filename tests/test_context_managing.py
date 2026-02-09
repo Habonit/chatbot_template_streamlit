@@ -17,30 +17,29 @@ load_dotenv()
 class TestShouldSummarize:
     """should_summarize() 함수 테스트"""
 
-    def test_turn_1_2_3_returns_false(self):
-        """Turn 1, 2, 3에서는 False"""
+    def test_turn_1_2_returns_false(self):
+        """Turn 1, 2에서는 False (현재 턴 미포함 기준)"""
         from service.react_graph import should_summarize
 
         assert should_summarize(1) is False
         assert should_summarize(2) is False
-        assert should_summarize(3) is False
 
-    def test_turn_4_7_10_returns_true(self):
-        """Turn 4, 7, 10에서는 True"""
+    def test_turn_3_6_9_returns_true(self):
+        """Turn 3, 6, 9에서는 True (이전 normal 턴 3개 누적 시)"""
         from service.react_graph import should_summarize
 
-        assert should_summarize(4) is True
-        assert should_summarize(7) is True
-        assert should_summarize(10) is True
+        assert should_summarize(3) is True
+        assert should_summarize(6) is True
+        assert should_summarize(9) is True
 
-    def test_turn_5_6_8_9_returns_false(self):
-        """Turn 5, 6, 8, 9에서는 False"""
+    def test_turn_4_5_7_8_returns_false(self):
+        """Turn 4, 5, 7, 8에서는 False"""
         from service.react_graph import should_summarize
 
+        assert should_summarize(4) is False
         assert should_summarize(5) is False
-        assert should_summarize(6) is False
+        assert should_summarize(7) is False
         assert should_summarize(8) is False
-        assert should_summarize(9) is False
 
 
 class TestExtractLastNTurns:

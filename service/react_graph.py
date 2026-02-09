@@ -108,6 +108,13 @@ class ChatState(TypedDict):
     graph_path: list[str]  # 실행된 노드 경로 추적
     summary_triggered: bool  # 요약 실행 여부
 
+    # === Router Node 통합 ===
+    mode: str  # "casual", "normal" — router_node이 설정
+    is_casual: bool  # mode == "casual" 편의 플래그
+
+    # === Phase 05: 프롬프트 캡처 ===
+    actual_prompts: dict
+
     # === PDF 컨텍스트 ===
     pdf_description: str
 
@@ -120,12 +127,13 @@ class ChatState(TypedDict):
 def should_summarize(normal_turn_count: int, total_turn_count: int = None) -> bool:
     """요약 필요 여부 판단
 
-    Phase 03-3-2: Casual Mode 대응
-    - 기본: normal 턴 4, 7, 10, ... 에서 요약 트리거
+    summary_node가 router_node 이전에 실행되므로
+    현재 턴이 아직 normal_turn_count에 포함되지 않은 상태에서 판단합니다.
+    - 기본: normal 턴 3, 6, 9, ... 에서 요약 트리거 (이전 3턴 누적 기준)
     - Fallback: 전체 턴 10, 20, 30, ... 에서 강제 요약 (토큰 관리)
 
     Args:
-        normal_turn_count: normal 모드 턴 카운트 (casual 제외)
+        normal_turn_count: normal 모드 턴 카운트 (casual 제외, 현재 턴 미포함)
         total_turn_count: 전체 턴 카운트 (Fallback용, 생략 시 normal_turn_count 사용)
 
     Returns:
@@ -134,8 +142,8 @@ def should_summarize(normal_turn_count: int, total_turn_count: int = None) -> bo
     if total_turn_count is None:
         total_turn_count = normal_turn_count
 
-    # 기본 조건: normal 턴 4, 7, 10...
-    if normal_turn_count >= 4 and (normal_turn_count - 1) % 3 == 0:
+    # 기본 조건: normal 턴 3, 6, 9... (이전 normal 턴 3개 누적 시)
+    if normal_turn_count >= 3 and normal_turn_count % 3 == 0:
         return True
 
     # Fallback: 전체 턴 10개마다 강제 요약
@@ -251,6 +259,8 @@ class ReactGraphBuilder:
         embedding_service: Any = None,
         embedding_repo: Any = None,
         db_path: str = None,
+        search_depth: str = "basic",
+        max_results: int = 5,
     ):
         self.api_key = api_key
         self.model_name = model
@@ -265,6 +275,8 @@ class ReactGraphBuilder:
         self.embedding_service = embedding_service
         self.embedding_repo = embedding_repo
         self.db_path = db_path or self.DEFAULT_DB_PATH
+        self.search_depth = search_depth
+        self.max_results = max_results
 
         # Phase 03-5: thinking 지원 모델 검증
         THINKING_SUPPORTED_MODELS = ["gemini-2.5-pro", "gemini-2.5-flash"]
@@ -381,12 +393,12 @@ class ReactGraphBuilder:
                 "graph_path": graph_path,
             }
 
-        # Phase 03-3-2: 요약할 normal 턴 ID (현재 턴 제외, 직전 3개)
-        # normal_turn_ids에는 현재 턴이 포함되어 있으므로 [-4:-1] 사용
-        if len(normal_turn_ids) >= 4:
-            turns_to_summarize = normal_turn_ids[-4:-1]  # 현재 턴 제외한 직전 3개
+        # 요약할 normal 턴 ID (직전 3개)
+        # summary_node가 router_node 이전에 실행되므로 현재 턴은 아직 미포함
+        if len(normal_turn_ids) >= 3:
+            turns_to_summarize = normal_turn_ids[-3:]  # 직전 3개 normal 턴
         else:
-            turns_to_summarize = normal_turn_ids[:-1] if len(normal_turn_ids) > 1 else []
+            turns_to_summarize = list(normal_turn_ids) if normal_turn_ids else []
 
         if not turns_to_summarize:
             return {
@@ -486,37 +498,28 @@ class ReactGraphBuilder:
     def _llm_node(self, state: ChatState) -> dict:
         """LLM 노드: 도구 호출 또는 최종 응답 생성
 
-        Phase 03-3: Context 구성
-        - System prompt (요약 포함)
-        - 완료된 raw 턴들 (요약되지 않은 턴)
-        - 현재 진행 중인 턴
+        Context 구성 (단기/장기 기억 분리):
+        - 장기 기억: System prompt에 요약 포함 (normal 턴만 요약)
+        - 단기 기억: 최근 3턴 raw 메시지 (casual 포함) + 현재 턴
         """
         graph_path = state.get("graph_path", []) + ["llm_node"]
-        turn_count = state.get("turn_count", 0)
-        summary_history = state.get("summary_history", [])
         all_messages = state.get("messages", [])
 
-        # 요약되지 않은 raw 턴 수 계산
-        summarized_turns = len(summary_history) * 3
-        raw_turn_count = turn_count - summarized_turns
-
-        # System prompt 구성 (요약 포함)
+        # 장기 기억: System prompt (요약 포함)
         system_content = self._build_system_prompt(state)
         system_prompt = SystemMessage(content=system_content)
 
-        # Context 구성
-        if raw_turn_count <= 1:
-            # 현재 턴만 있는 경우 (Turn 4, 7, 10 등)
-            # 현재 진행 중인 턴의 메시지만 사용
-            current_turn = extract_current_turn(all_messages)
-            context_messages = [system_prompt] + current_turn
-        else:
-            # 여러 raw 턴이 있는 경우 (Turn 5, 6, 8, 9 등)
-            # 완료된 이전 raw 턴들 + 현재 턴
-            completed_raw_turns = max(0, raw_turn_count - 1)
-            recent_completed = extract_last_n_turns(all_messages, n=completed_raw_turns) if completed_raw_turns > 0 else []
-            current_turn = extract_current_turn(all_messages)
-            context_messages = [system_prompt] + recent_completed + current_turn
+        # 단기 기억: 최근 3턴 (casual 포함) + 현재 진행 중인 턴
+        recent_completed = extract_last_n_turns(all_messages, n=3)
+        current_turn = extract_current_turn(all_messages)
+        context_messages = [system_prompt] + recent_completed + current_turn
+
+        # Phase 05: 프롬프트 캡처
+        actual_prompts = {
+            "system_prompt": system_content,
+            "user_messages_count": len(current_turn),
+            "context_turns": len(recent_completed),
+        }
 
         # LLM 호출 (bind_tools 된 LLM)
         response = self._llm_with_tools.invoke(context_messages)
@@ -537,7 +540,148 @@ class ReactGraphBuilder:
             "input_tokens": state.get("input_tokens", 0) + in_tokens,
             "output_tokens": state.get("output_tokens", 0) + out_tokens,
             "graph_path": graph_path,
+            "actual_prompts": actual_prompts,
         }
+
+    def _router_node(self, state: ChatState) -> dict:
+        """Router Node: 입력을 분석하여 casual/normal/reasoning 모드 결정
+
+        그래프의 첫 번째 노드로 실행되어 모든 라우팅을 그래프 내부에서 수행합니다.
+        """
+        from service.reasoning_detector import detect_reasoning_need
+
+        messages = state.get("messages", [])
+        turn_count = state.get("turn_count", 0)
+        normal_turn_ids = list(state.get("normal_turn_ids", []))
+
+        # 마지막 HumanMessage에서 user_input 추출
+        user_input = ""
+        for msg in reversed(messages):
+            if isinstance(msg, HumanMessage):
+                user_input = msg.content
+                break
+
+        mode = detect_reasoning_need(user_input)
+        is_casual = mode == "casual"
+
+        # casual이 아닌 경우에만 normal_turn_ids에 turn_count 추가
+        if not is_casual:
+            normal_turn_ids = normal_turn_ids + [turn_count]
+
+        return {
+            "mode": mode,
+            "is_casual": is_casual,
+            "graph_path": state.get("graph_path", []) + ["router_node"],
+            "normal_turn_ids": normal_turn_ids,
+            "normal_turn_count": len(normal_turn_ids),
+        }
+
+    def _build_casual_context_from_state(
+        self, user_input: str, summary_history: list, history_messages: list[BaseMessage]
+    ) -> list[BaseMessage]:
+        """casual 모드용 context를 state의 BaseMessage 리스트로 구성
+
+        Args:
+            user_input: 사용자 입력 텍스트
+            summary_history: 요약 히스토리
+            history_messages: 이미 변환된 BaseMessage 리스트 (현재 턴의 HumanMessage 제외)
+
+        Returns:
+            list[BaseMessage]: SystemMessage(요약) + 히스토리 + casual HumanMessage
+        """
+        context = []
+
+        # 요약문이 있으면 SystemMessage로 포함
+        if summary_history:
+            parts = ["당신은 유용한 AI 어시스턴트입니다."]
+            parts.append("\n[이전 대화 요약]")
+            for s in summary_history:
+                turns = s.get("turns", [])
+                if turns:
+                    turns_str = f"{turns[0]}-{turns[-1]}턴"
+                else:
+                    turns_str = "이전 턴"
+                parts.append(f"[{turns_str}] {s.get('summary', '')}")
+            context.append(SystemMessage(content="\n".join(parts)))
+
+        # 히스토리 메시지 (현재 턴의 HumanMessage 제외)
+        for msg in history_messages:
+            if isinstance(msg, (HumanMessage, AIMessage)):
+                context.append(msg)
+
+        # casual 프롬프트
+        casual_prompt = f"""사용자가 "{user_input}"라고 말했습니다.
+자연스럽고 친근하게 짧게 응답해주세요. 분석이나 설명 없이요."""
+        context.append(HumanMessage(content=casual_prompt))
+
+        return context
+
+    def _casual_node(self, state: ChatState) -> dict:
+        """Casual Node: casual 모드 LLM 호출
+
+        self._llm.invoke(context)를 직접 호출합니다.
+        LangGraph stream_mode="messages"가 BaseChatModel.invoke()를 자동 인터셉트하여
+        토큰 단위 스트리밍을 제공합니다.
+
+        컨텍스트 윈도우링: 전체 히스토리 대신 최근 3턴만 사용하여
+        토큰 효율성을 확보합니다. 요약문은 SystemMessage로 포함됩니다.
+        """
+        messages = state.get("messages", [])
+        summary_history = state.get("summary_history", [])
+        graph_path = state.get("graph_path", []) + ["casual_node"]
+
+        # 마지막 HumanMessage에서 user_input 추출
+        user_input = ""
+        # 히스토리 메시지 = 마지막 HumanMessage 이전의 모든 메시지
+        history_messages = []
+        for i, msg in enumerate(messages):
+            if isinstance(msg, HumanMessage) and i == len(messages) - 1:
+                user_input = msg.content
+            else:
+                history_messages.append(msg)
+
+        # 컨텍스트 윈도우링: 최근 3턴만 사용
+        recent_history = extract_last_n_turns(history_messages, n=3)
+
+        context = self._build_casual_context_from_state(
+            user_input, summary_history, recent_history
+        )
+
+        # Phase 05: 프롬프트 캡처
+        casual_prompt = context[-1].content if context else ""
+        system_prompt_text = context[0].content if context and isinstance(context[0], SystemMessage) else ""
+        actual_prompts = {
+            "system_prompt": system_prompt_text,
+            "user_messages_count": 1,
+            "context_turns": len(recent_history),
+            "casual_prompt": casual_prompt,
+        }
+
+        response = self._llm.invoke(context)
+
+        # 토큰 추적
+        in_tokens, out_tokens = 0, 0
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            in_tokens = response.usage_metadata.get("input_tokens", 0)
+            out_tokens = response.usage_metadata.get("output_tokens", 0)
+
+        return {
+            "messages": [response],
+            "graph_path": graph_path,
+            "input_tokens": state.get("input_tokens", 0) + in_tokens,
+            "output_tokens": state.get("output_tokens", 0) + out_tokens,
+            "actual_prompts": actual_prompts,
+        }
+
+    def _route_by_mode(self, state: ChatState) -> str:
+        """router_node 이후 조건부 라우팅
+
+        Returns:
+            "casual_node" | "llm_node"
+        """
+        if state.get("is_casual"):
+            return "casual_node"
+        return "llm_node"
 
     def build(self):
         """그래프 빌드 및 컴파일 (Tool Calling 패턴)"""
@@ -549,6 +693,8 @@ class ReactGraphBuilder:
             embedding_repo=self.embedding_repo,
             session_id=self._current_session_id,
             llm=self._llm,
+            search_depth=self.search_depth,
+            max_results=self.max_results,
         )
 
         # LLM에 도구 바인딩
@@ -560,14 +706,29 @@ class ReactGraphBuilder:
         # 그래프 빌더
         builder = StateGraph(ChatState)
 
-        # 노드 추가
+        # 노드 추가 (5개)
         builder.add_node("summary_node", self._summary_node)
+        builder.add_node("router_node", self._router_node)
+        builder.add_node("casual_node", self._casual_node)
         builder.add_node("llm_node", self._llm_node)
         builder.add_node("tool_node", tool_node)
 
-        # 엣지 정의
+        # 엣지 정의: START → summary_node → router_node
         builder.add_edge(START, "summary_node")
-        builder.add_edge("summary_node", "llm_node")
+        builder.add_edge("summary_node", "router_node")
+
+        # router_node → casual_node 또는 llm_node
+        builder.add_conditional_edges(
+            "router_node",
+            self._route_by_mode,
+            {
+                "casual_node": "casual_node",
+                "llm_node": "llm_node",
+            }
+        )
+
+        # casual_node → END
+        builder.add_edge("casual_node", END)
 
         # 조건부 엣지: LLM이 도구 호출했으면 tool_node로, 아니면 END
         builder.add_conditional_edges(
@@ -596,25 +757,16 @@ class ReactGraphBuilder:
         summary_history: list = None,
         compression_rate: float = 0.3,
         normal_turn_ids: list = None,
-    ) -> tuple[str, dict, dict, list] | None:
+    ) -> tuple[dict, dict]:
         """invoke()와 stream() 공통 전처리
 
+        모드 감지는 router_node에서 수행하므로 여기서는 상태 구성만 담당합니다.
+
         Returns:
-            casual인 경우: None (호출측에서 casual 처리)
-            normal인 경우: ("normal", initial_state, config, updated_normal_turn_ids)
+            (initial_state, config) 튜플. 항상 반환됩니다.
         """
         if normal_turn_ids is None:
             normal_turn_ids = []
-
-        from service.reasoning_detector import detect_reasoning_need
-        mode = detect_reasoning_need(user_input)
-
-        if mode == "casual":
-            return None
-
-        # normal 모드
-        updated_normal_turn_ids = normal_turn_ids + [turn_count]
-        normal_turn_count = len(updated_normal_turn_ids)
 
         self._current_session_id = session_id
         if self._graph is None:
@@ -648,16 +800,21 @@ class ReactGraphBuilder:
             "input_tokens": 0,
             "output_tokens": 0,
             "model_used": self.model_name,
-            "normal_turn_count": normal_turn_count,
-            "normal_turn_ids": updated_normal_turn_ids,
+            "normal_turn_count": len(normal_turn_ids),
+            "normal_turn_ids": normal_turn_ids,
             # Phase 04: 교육용 메타데이터
             "graph_path": [],
             "summary_triggered": False,
+            # Phase 05: 프롬프트 캡처
+            "actual_prompts": {},
+            # Router Node 통합: 기본값 (router_node이 덮어씀)
+            "mode": "",
+            "is_casual": False,
         }
 
         config = {"configurable": {"thread_id": session_id}}
 
-        return "normal", initial_state, config, updated_normal_turn_ids
+        return initial_state, config
 
     def _extract_current_turn_messages(
         self, result_messages: list, turn_count: int
@@ -713,35 +870,6 @@ class ReactGraphBuilder:
             result["thought_process"] = thought_process
         return result
 
-    def _invoke_casual(self, user_input, summary, summary_history, normal_turn_ids):
-        """casual 모드 invoke (기존 코드 분리)"""
-        casual_prompt = f"""사용자가 "{user_input}"라고 말했습니다.
-자연스럽고 친근하게 짧게 응답해주세요. 분석이나 설명 없이요."""
-
-        content, in_tokens, out_tokens = self._invoke_llm_with_token_tracking(
-            [HumanMessage(content=casual_prompt)]
-        )
-
-        return {
-            "text": content,
-            "tool_history": [],
-            "tool_results": {},
-            "iteration": 0,
-            "model_used": self.model_name,
-            "summary": summary,
-            "summary_history": summary_history or [],
-            "input_tokens": in_tokens,
-            "output_tokens": out_tokens,
-            "total_tokens": in_tokens + out_tokens,
-            "is_casual": True,
-            "normal_turn_ids": normal_turn_ids,
-            "normal_turn_count": len(normal_turn_ids),
-            "mode": "casual",
-            "graph_path": ["casual_bypass"],
-            "summary_triggered": False,
-            "error": None,
-        }
-
     def invoke(
         self,
         user_input: str,
@@ -773,17 +901,10 @@ class ReactGraphBuilder:
         if normal_turn_ids is None:
             normal_turn_ids = []
 
-        preparation = self._prepare_invocation(
+        initial_state, config = self._prepare_invocation(
             user_input, session_id, messages, summary, pdf_description,
             turn_count, summary_history, compression_rate, normal_turn_ids,
         )
-
-        if preparation is None:
-            return self._invoke_casual(
-                user_input, summary, summary_history, normal_turn_ids
-            )
-
-        mode, initial_state, config, updated_normal_turn_ids = preparation
 
         result = self._graph.invoke(initial_state, config)
 
@@ -792,6 +913,9 @@ class ReactGraphBuilder:
 
         input_tokens = result.get("input_tokens", 0)
         output_tokens = result.get("output_tokens", 0)
+        mode = result.get("mode", "")
+        is_casual = result.get("is_casual", False)
+        updated_normal_turn_ids = result.get("normal_turn_ids", normal_turn_ids)
 
         # Phase 04: graph_path 강화 (tool_node 추론)
         graph_path = list(result.get("graph_path", []))
@@ -820,7 +944,8 @@ class ReactGraphBuilder:
             "mode": mode,
             "graph_path": graph_path,
             "summary_triggered": result.get("summary_triggered", False),
-            "is_casual": False,
+            "is_casual": is_casual,
+            "actual_prompts": result.get("actual_prompts", {}),
             "error": None,
         }
 
@@ -844,18 +969,10 @@ class ReactGraphBuilder:
         if normal_turn_ids is None:
             normal_turn_ids = []
 
-        preparation = self._prepare_invocation(
+        initial_state, config = self._prepare_invocation(
             user_input, session_id, messages, summary, pdf_description,
             turn_count, summary_history, compression_rate, normal_turn_ids,
         )
-
-        if preparation is None:
-            yield from self._stream_casual(
-                user_input, summary, summary_history, normal_turn_ids
-            )
-            return
-
-        mode, initial_state, config, updated_normal_turn_ids = preparation
 
         tool_calls_buffer = []
 
@@ -869,6 +986,10 @@ class ReactGraphBuilder:
         final_state = self._graph.get_state(config).values
         result_messages = final_state.get("messages", [])
         parsed = self._parse_result(result_messages, turn_count)
+
+        mode = final_state.get("mode", "")
+        is_casual = final_state.get("is_casual", False)
+        updated_normal_turn_ids = final_state.get("normal_turn_ids", normal_turn_ids)
 
         # Phase 04: graph_path 강화 (tool_node 추론)
         graph_path = list(final_state.get("graph_path", []))
@@ -897,7 +1018,8 @@ class ReactGraphBuilder:
                 "mode": mode,
                 "graph_path": graph_path,
                 "summary_triggered": final_state.get("summary_triggered", False),
-                "is_casual": False,
+                "is_casual": is_casual,
+                "actual_prompts": final_state.get("actual_prompts", {}),
             }
         }
 
@@ -948,48 +1070,3 @@ class ReactGraphBuilder:
 
         return events
 
-    def _stream_casual(
-        self,
-        user_input: str,
-        summary: str,
-        summary_history: list,
-        normal_turn_ids: list,
-    ) -> Generator[dict, None, None]:
-        """일상적 대화 스트리밍"""
-        casual_prompt = f"""사용자가 "{user_input}"라고 말했습니다.
-자연스럽고 친근하게 짧게 응답해주세요. 분석이나 설명 없이요."""
-
-        full_text = ""
-        last_usage = None
-
-        for chunk in self._llm.stream([HumanMessage(content=casual_prompt)]):
-            content = extract_text_from_content(chunk.content) if chunk.content else ""
-            if content:
-                full_text += content
-                yield {"type": "token", "content": content}
-
-            if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
-                last_usage = chunk.usage_metadata
-
-        in_tokens = last_usage.get("input_tokens", 0) if last_usage else 0
-        out_tokens = last_usage.get("output_tokens", 0) if last_usage else 0
-
-        yield {
-            "type": "done",
-            "metadata": {
-                "text": full_text,
-                "tool_history": [],
-                "tool_results": {},
-                "model_used": self.model_name,
-                "summary": summary,
-                "summary_history": summary_history or [],
-                "input_tokens": in_tokens,
-                "output_tokens": out_tokens,
-                "is_casual": True,
-                "normal_turn_ids": normal_turn_ids,
-                "normal_turn_count": len(normal_turn_ids),
-                "mode": "casual",
-                "graph_path": ["casual_bypass"],
-                "summary_triggered": False,
-            }
-        }

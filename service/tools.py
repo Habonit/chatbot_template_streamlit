@@ -18,6 +18,8 @@ def create_tools_with_services(
     embedding_repo: Any = None,
     session_id: str = "",
     llm: Any = None,
+    search_depth: str = "basic",
+    max_results: int = 5,
 ) -> list:
     """서비스가 주입된 도구 목록 생성
 
@@ -47,7 +49,9 @@ def create_tools_with_services(
             query: 검색할 쿼리
         """
         if search_service:
-            results = search_service.search(query)
+            results = search_service.search(
+                query, search_depth=search_depth, max_results=max_results
+            )
             return search_service.format_for_llm(results)
         return "웹 검색 서비스가 설정되지 않았습니다."
 

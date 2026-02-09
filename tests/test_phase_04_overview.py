@@ -46,6 +46,8 @@ class TestGetLanggraphDiagram:
 
         markdown = get_langgraph_diagram()
 
+        assert "router_node" in markdown
+        assert "casual_node" in markdown
         assert "summary_node" in markdown
         assert "llm_node" in markdown
         assert "tool_node" in markdown
@@ -80,12 +82,14 @@ class TestGetArchitectureDiagram:
         # Service layer
         assert "Service Layer" in diagram
         assert "ReactGraphBuilder" in diagram
-        assert "ReasoningDetector" in diagram
+        assert "ModeDetector" in diagram
         assert "SessionManager" in diagram
         assert "RAGService" in diagram
 
         # LangGraph layer
         assert "LangGraph ReAct Graph" in diagram
+        assert "router_node" in diagram
+        assert "casual_node" in diagram
         assert "summary_node" in diagram
         assert "llm_node" in diagram
         assert "tool_node" in diagram
@@ -146,7 +150,7 @@ class TestGetToolInfo:
 
         expected_names = [
             "get_current_time",
-            "switch_to_reasoning",
+            "reasoning",
             "web_search",
             "search_pdf_knowledge",
         ]

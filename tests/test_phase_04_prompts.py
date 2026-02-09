@@ -120,7 +120,7 @@ class TestGetPromptFlowDiagram:
 
         diagram = get_prompt_flow_diagram()
 
-        assert "ReasoningDetector" in diagram
+        assert "ModeDetector" in diagram
         assert "casual" in diagram
         assert "System Prompt Builder" in diagram
         assert "summary" in diagram.lower()

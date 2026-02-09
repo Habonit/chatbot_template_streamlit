@@ -103,14 +103,14 @@ def get_prompt_flow_diagram() -> str:
     """프롬프트 사용 흐름 Mermaid 다이어그램 반환"""
     return """
 graph LR
-    input["사용자 입력"] --> detector["ReasoningDetector"]
+    input["사용자 입력"] --> summary_node["summary_node"]
+    summary_node --> summary_prompt["Summary Prompt"]
+    summary_node --> detector["ModeDetector<br/>(router_node)"]
     detector -->|casual| casual_prompt["Casual Prompt<br/>(직접 LLM 호출)"]
-    detector -->|normal/reasoning| system["System Prompt Builder"]
+    detector -->|normal| system["System Prompt Builder"]
     system --> llm["llm_node<br/>LLM + bind_tools"]
     llm -->|tool_call| tools["Tool Prompts"]
     tools --> reasoning_prompt["reasoning tool"]
-    summary_node["summary_node"] --> summary_prompt["Summary Prompt"]
-    summary_node --> system
 """
 
 
@@ -155,7 +155,7 @@ def render_prompts_tab() -> None:
             st.markdown(f"**그래프 노드**: `{info['graph_node']}`")
             st.divider()
             st.markdown("**프롬프트 내용:**")
-            st.code(info["content"], language="text")
+            st.code(info["content"], language="python")
 
     if legacy_prompts:
         st.markdown("### 🗄️ 레거시 프롬프트")
@@ -166,7 +166,7 @@ def render_prompts_tab() -> None:
                 st.markdown(f"**사용 위치**: {info['usage']}")
                 st.divider()
                 st.markdown("**프롬프트 내용:**")
-                st.code(info["content"], language="text")
+                st.code(info["content"], language="python")
 
     st.divider()
 

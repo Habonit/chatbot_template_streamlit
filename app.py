@@ -18,6 +18,7 @@ from component.chat_tab import render_chat_tab
 from component.pdf_tab import render_pdf_tab
 from component.overview_tab import render_overview_tab
 from component.prompts_tab import render_prompts_tab
+from component.styles import inject_custom_css
 
 load_dotenv()
 
@@ -95,6 +96,8 @@ def _create_graph_builder(
         embedding_service=embedding_service,
         embedding_repo=embed_repo if st.session_state.chunks else None,
         db_path=DB_PATH,
+        search_depth=settings.get("search_depth", "basic"),
+        max_results=settings.get("max_results", 5),
     )
 
 
@@ -162,6 +165,7 @@ def handle_chat_message(
         thought_process=result.get("thought_process"),
         thinking_budget=settings.get("thinking_budget", 0),
         is_casual=result.get("is_casual", False),
+        actual_prompts=result.get("actual_prompts", {}),
     )
     st.session_state.messages.append(assistant_msg)
     # Phase 02-6: CSV 저장 제거 - SqliteSaver가 그래프 상태로 저장
@@ -246,6 +250,7 @@ def handle_stream_message(
             thought_process=final_metadata.get("thought_process"),
             thinking_budget=settings.get("thinking_budget", 0),
             is_casual=final_metadata.get("is_casual", False),
+            actual_prompts=final_metadata.get("actual_prompts", {}),
         )
         st.session_state.messages.append(assistant_msg)
 
@@ -385,6 +390,7 @@ def load_session_data(
 
 
 def main():
+    inject_custom_css()
     init_session_state()
 
     # Phase 02-6: SessionManager + EmbeddingRepository만 사용

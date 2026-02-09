@@ -113,25 +113,25 @@ class TestShouldSummarizeWithFallback:
         params = list(sig.parameters.keys())
         assert len(params) >= 2, "should_summarize는 normal_turn_count, total_turn_count 필요"
 
-    def test_normal_trigger_at_4(self):
-        """normal_count=4에서 트리거"""
+    def test_normal_trigger_at_3(self):
+        """normal_count=3에서 트리거 (이전 normal 3턴 누적)"""
         from service.react_graph import should_summarize
-        assert should_summarize(4, 4) is True
+        assert should_summarize(3, 3) is True
 
-    def test_normal_trigger_at_7(self):
-        """normal_count=7에서 트리거"""
+    def test_normal_trigger_at_6(self):
+        """normal_count=6에서 트리거"""
         from service.react_graph import should_summarize
-        assert should_summarize(7, 7) is True
+        assert should_summarize(6, 6) is True
 
-    def test_no_trigger_at_3(self):
-        """normal_count=3에서 트리거 안함"""
+    def test_no_trigger_at_2(self):
+        """normal_count=2에서 트리거 안함"""
         from service.react_graph import should_summarize
-        assert should_summarize(3, 3) is False
+        assert should_summarize(2, 2) is False
 
-    def test_no_trigger_at_5(self):
-        """normal_count=5에서 트리거 안함"""
+    def test_no_trigger_at_4(self):
+        """normal_count=4에서 트리거 안함"""
         from service.react_graph import should_summarize
-        assert should_summarize(5, 5) is False
+        assert should_summarize(4, 4) is False
 
     def test_fallback_trigger_at_total_10(self):
         """total=10에서 Fallback 트리거 (normal이 적어도)"""
