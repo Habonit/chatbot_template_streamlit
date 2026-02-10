@@ -15,6 +15,8 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage
 
+import json
+
 from prompt.summary.summary_generator import get_prompt as get_summary_prompt
 from service.tools import create_tools_with_services
 
@@ -305,13 +307,20 @@ class ReactGraphBuilder:
         if seed is not None:
             llm_kwargs["seed"] = seed
 
-        # Phase 03-5: thinking 설정
-        if self.thinking_budget > 0:
-            llm_kwargs["thinking_budget"] = self.thinking_budget
-            if self.show_thoughts:
-                llm_kwargs["include_thoughts"] = True
-
+        # Phase 04-1: 메인 LLM — thinking 없음
         self._llm = ChatGoogleGenerativeAI(**llm_kwargs)
+
+        # Phase 04-1: Reasoning 전용 LLM — thinking 활성화
+        if self.thinking_budget > 0:
+            reasoning_kwargs = {**llm_kwargs}
+            reasoning_kwargs["thinking_budget"] = self.thinking_budget
+            if self.show_thoughts:
+                reasoning_kwargs["include_thoughts"] = True
+            self._llm_for_reasoning = ChatGoogleGenerativeAI(**reasoning_kwargs)
+            self._reasoning_thinking_budget = self.thinking_budget
+        else:
+            self._llm_for_reasoning = self._llm
+            self._reasoning_thinking_budget = 0
         self._llm_with_tools = None  # build()에서 초기화
         self._tools = None  # build()에서 초기화
         self._current_session_id = ""  # invoke 시 설정
@@ -693,6 +702,8 @@ class ReactGraphBuilder:
             embedding_repo=self.embedding_repo,
             session_id=self._current_session_id,
             llm=self._llm,
+            reasoning_llm=self._llm_for_reasoning,
+            show_thoughts=self.show_thoughts,
             search_depth=self.search_depth,
             max_results=self.max_results,
         )
@@ -840,14 +851,11 @@ class ReactGraphBuilder:
         """
         final_message = result_messages[-1] if result_messages else None
         final_text = ""
-        thought_process = ""
 
         if final_message:
             raw_content = getattr(final_message, "content", "")
-            if self.show_thoughts:
-                thought_process, final_text = extract_thought_from_content(raw_content)
-            else:
-                final_text = extract_text_from_content(raw_content)
+            # Phase 04-1: 메인 LLM은 thinking 없음 → 항상 text만 추출
+            final_text = extract_text_from_content(raw_content)
 
         current_turn_messages = self._extract_current_turn_messages(
             result_messages, turn_count
@@ -861,6 +869,18 @@ class ReactGraphBuilder:
             if hasattr(msg, "type") and msg.type == "tool":
                 tool_results[msg.name] = msg.content
 
+        # Phase 04-1: thought_process는 reasoning 도구 결과(JSON)에서 구조적으로 추출
+        thought_process = ""
+        reasoning_tokens = None
+        if self.show_thoughts and "reasoning" in tool_results:
+            try:
+                reasoning_data = json.loads(tool_results["reasoning"])
+                thought_process = reasoning_data.get("thought", "")
+                if "reasoning_tokens" in reasoning_data:
+                    reasoning_tokens = reasoning_data["reasoning_tokens"]
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         result = {
             "text": final_text,
             "tool_history": tool_history,
@@ -868,6 +888,8 @@ class ReactGraphBuilder:
         }
         if thought_process:
             result["thought_process"] = thought_process
+        if reasoning_tokens:
+            result["reasoning_tokens"] = reasoning_tokens
         return result
 
     def invoke(
@@ -916,6 +938,11 @@ class ReactGraphBuilder:
         mode = result.get("mode", "")
         is_casual = result.get("is_casual", False)
         updated_normal_turn_ids = result.get("normal_turn_ids", normal_turn_ids)
+
+        # Phase 04-1: reasoning 도구 토큰 합산
+        reasoning_tokens = parsed.get("reasoning_tokens", {})
+        input_tokens += reasoning_tokens.get("input", 0)
+        output_tokens += reasoning_tokens.get("output", 0)
 
         # Phase 04: graph_path 강화 (tool_node 추론)
         graph_path = list(result.get("graph_path", []))
@@ -1036,8 +1063,9 @@ class ReactGraphBuilder:
         events = []
 
         if isinstance(chunk, AIMessageChunk):
-            # Phase 03-5: thought detection
-            if self.show_thoughts and isinstance(chunk.content, list):
+            # Phase 04-1: 메인 LLM에는 thinking 없음 → 이 블록은 도달하지 않음
+            # 향후 reasoning 스트리밍 확장 시 재활용 가능하도록 유지
+            if self.show_thoughts and isinstance(chunk.content, list):  # pragma: no cover
                 for item in chunk.content:
                     if isinstance(item, dict):
                         text = item.get("text", "")

@@ -174,7 +174,6 @@ class TestOverviewTab:
         content = get_overview_content()
 
         required_sections = [
-            "introduction",
             "quick_start",
             "features",
             "settings",

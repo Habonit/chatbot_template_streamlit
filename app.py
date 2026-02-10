@@ -420,6 +420,9 @@ def main():
 
     settings = render_sidebar()
 
+    st.title("Gemini Hybrid Chatbot")
+    st.caption("AI 챗봇 핵심 개념 교육 데모")
+
     tab0, tab1, tab2, tab3 = st.tabs(["📖 Overview", "📝 Prompts", "💬 Chat", "📄 PDF Preprocessing"])
 
     with tab0:

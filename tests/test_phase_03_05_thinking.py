@@ -137,16 +137,24 @@ class TestParseResultWithThought:
     """_parse_result() thought 추출 테스트"""
 
     def test_parse_result_with_thought_process(self):
+        """Phase 04-1: 메인 LLM은 thinking 없음 → thought는 reasoning JSON에서 추출"""
+        import json
+        from unittest.mock import MagicMock
         from service.react_graph import ReactGraphBuilder
         builder = ReactGraphBuilder(api_key="test", model="gemini-2.5-flash",
                                      thinking_budget=1024, show_thoughts=True)
 
-        msg = AIMessage(content=[
-            {"type": "text", "text": "I think step by step...", "thought": True},
-            {"type": "text", "text": "The answer is 42."},
-        ])
+        # reasoning 도구가 JSON으로 thought를 반환하는 시나리오
+        tool_msg = MagicMock()
+        tool_msg.name = "reasoning"
+        tool_msg.content = json.dumps(
+            {"thought": "I think step by step...", "analysis": "분석 결과"}
+        )
+        tool_msg.type = "tool"
+        tool_msg.tool_calls = []
 
-        result = builder._parse_result([msg], turn_count=1)
+        ai_msg = AIMessage(content="The answer is 42.")
+        result = builder._parse_result([tool_msg, ai_msg], turn_count=0)
         assert result["text"] == "The answer is 42."
         assert result["thought_process"] == "I think step by step..."
 

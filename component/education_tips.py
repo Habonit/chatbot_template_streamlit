@@ -122,16 +122,17 @@ def get_thinking_education(thinking_budget: int, thought_process: str) -> dict:
         return {}
 
     explanation = (
-        f"Thinking Budget {thinking_budget} 토큰이 할당되어 모델이 답변 전에 "
-        "내부적으로 사고 과정을 거칩니다. thinking 토큰은 응답에 포함되지 않지만 "
-        "출력 토큰으로 소비됩니다. 복잡한 추론, 수학, 코딩 문제에서 정확도를 높입니다."
+        f"Thinking Budget {thinking_budget} 토큰이 reasoning 도구 전용으로 할당되었습니다. "
+        "일반 대화나 다른 도구 호출에서는 thinking 토큰을 소비하지 않고, "
+        "reasoning 도구가 호출될 때만 Gemini의 내부 사고 과정이 활성화됩니다. "
+        "이는 비용 효율적으로 복잡한 추론 품질을 높이는 전략입니다."
     )
 
     if thought_process:
-        explanation += " 이번 턴에서 모델의 사고 과정이 캡처되었습니다."
+        explanation += " 이번 턴에서 reasoning 도구의 사고 과정이 캡처되었습니다."
 
     return {
-        "title": "Thinking Mode",
+        "title": "Reasoning Thinking",
         "explanation": explanation,
     }
 

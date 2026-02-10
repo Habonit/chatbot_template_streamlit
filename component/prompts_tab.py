@@ -116,7 +116,7 @@ graph LR
 
 def render_prompts_tab() -> None:
     """프롬프트 탭 렌더링"""
-    st.title("Prompts")
+    st.header("Prompts")
     st.caption("프롬프트가 그래프 어디서 어떻게 사용되는지 교육적으로 보여줍니다")
 
     # 1. 프롬프트 흐름도

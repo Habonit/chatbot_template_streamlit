@@ -140,14 +140,14 @@ def render_sidebar() -> dict:
 
         # Phase 02-7: 추론 모드 설정
         reasoning_mode = st.toggle(
-            "추론 모드 (Reasoning Mode)",
+            "추론 도구 Thinking",
             value=False,
-            help="복잡한 추론이 필요한 질문에 thinking 활성화",
+            help="reasoning 도구 호출 시 Gemini Thinking 활성화 (추가 토큰 사용)",
         )
 
         # Phase 03-5: thinking 설정
         if reasoning_mode:
-            st.caption("Thinking 활성화됨 — 복잡한 추론 질문에 사고 과정을 사용합니다.")
+            st.caption("Thinking 활성화됨 — reasoning 도구 호출 시에만 사고 과정을 사용합니다.")
             thinking_budget = st.slider(
                 "Thinking Budget",
                 min_value=0,
