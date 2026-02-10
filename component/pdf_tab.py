@@ -31,6 +31,7 @@ def render_pdf_tab(
                 if st.button("Upload", type="primary"):
                     on_upload(uploaded_file)
                     st.success("파일이 업로드되었습니다.")
+                    st.caption("다음 단계: 오른쪽의 'Start Preprocessing' 버튼을 클릭하세요.")
 
     with col2:
         st.markdown("### Actions")
@@ -46,6 +47,19 @@ def render_pdf_tab(
     if chunks:
         _render_chunk_stats(chunks)
         _render_chunk_table(chunks)
+    else:
+        _render_empty_state()
+
+
+def _render_empty_state():
+    """chunks가 없을 때 안내 메시지 표시"""
+    st.caption(
+        "PDF 문서가 아직 전처리되지 않았습니다. "
+        "PDF를 업로드하고 전처리를 시작하면 여기에 청크 목록과 통계가 표시됩니다."
+    )
+    st.markdown(
+        "**전처리 과정:** 텍스트 추출 → 청킹 → LLM 정규화 → 임베딩 생성"
+    )
 
 
 def _format_time(seconds: float) -> str:
@@ -109,6 +123,7 @@ def _run_preprocessing(on_process: callable) -> None:
     time_container.empty()
     total_time = sum(step_times.values())
     st.success(f"전처리가 완료되었습니다! (총 소요 시간: {_format_time(total_time)})")
+    st.caption("Chat 탭에서 PDF 관련 질문을 할 수 있습니다.")
 
 
 def _render_chunk_stats(chunks: list) -> None:

@@ -1,7 +1,9 @@
 import streamlit as st
 import csv
 import io
+import os
 from domain.session import Session
+from component.education_tips import get_parameter_help
 
 
 def _generate_csv_data(messages: list) -> bytes:
@@ -23,9 +25,32 @@ def _generate_csv_data(messages: list) -> bytes:
     return output.getvalue().encode("utf-8-sig")
 
 
+def _render_token_usage():
+    """토큰 사용량을 progress bar로 시각화"""
+    if "token_usage" not in st.session_state:
+        st.session_state.token_usage = {"input": 0, "output": 0, "total": 0}
+
+    usage = st.session_state.token_usage
+    token_limit_k = int(os.getenv("TOKEN_LIMIT_K", "256"))
+    token_limit = token_limit_k * 1000
+
+    st.sidebar.markdown("### Token Usage")
+
+    total = usage["total"]
+    progress = min(total / token_limit, 1.0) if token_limit > 0 else 0.0
+    percent = int(progress * 100)
+
+    st.sidebar.progress(progress, text=f"{total:,} / {token_limit:,} ({percent}%)")
+
+    col1, col2 = st.sidebar.columns(2)
+    col1.caption(f"입력: {usage['input']:,}")
+    col2.caption(f"출력: {usage['output']:,}")
+
+
 def render_sidebar() -> dict:
     st.sidebar.title("Settings")
 
+    # === API Keys ===
     with st.sidebar.expander("API Keys", expanded=True):
         gemini_key = st.text_input(
             "Gemini API Key",
@@ -55,7 +80,8 @@ def render_sidebar() -> dict:
 
     st.sidebar.divider()
 
-    with st.sidebar.expander("Model Settings", expanded=True):
+    # === Model & Reasoning ===
+    with st.sidebar.expander("Model & Reasoning", expanded=True):
         model = st.selectbox(
             "Chat Model",
             options=[
@@ -79,6 +105,7 @@ def render_sidebar() -> dict:
             max_value=2.0,
             value=0.7,
             step=0.1,
+            help=get_parameter_help("temperature"),
         )
 
         top_p = st.slider(
@@ -87,6 +114,7 @@ def render_sidebar() -> dict:
             max_value=1.0,
             value=0.9,
             step=0.05,
+            help=get_parameter_help("top_p"),
         )
 
         max_output_tokens = st.slider(
@@ -95,46 +123,74 @@ def render_sidebar() -> dict:
             max_value=65536,
             value=8192,
             step=256,
-            help="최대 출력 토큰 수 (Gemini 2.5: 최대 65,536)",
+            help=get_parameter_help("max_output_tokens"),
+        )
+
+        # Phase 03-1: seed 파라미터 추가
+        seed = st.number_input(
+            "Seed (재현성)",
+            min_value=-1,
+            max_value=2147483647,
+            value=-1,
+            step=1,
+            help=get_parameter_help("seed"),
         )
 
         st.divider()
 
         # Phase 02-7: 추론 모드 설정
         reasoning_mode = st.toggle(
-            "추론 모드 (Reasoning Mode)",
+            "추론 도구 Thinking",
             value=False,
-            help="복잡한 추론이 필요한 질문에 gemini-2.5-pro 사용",
+            help="reasoning 도구 호출 시 Gemini Thinking 활성화 (추가 토큰 사용)",
         )
 
-        auto_reasoning = st.toggle(
-            "자동 추론 모드 감지",
-            value=True,
-            help="질문 유형에 따라 자동으로 추론 모드 활성화",
-        )
-
+        # Phase 03-5: thinking 설정
         if reasoning_mode:
-            st.caption("📊 추론 모드 활성화 → gemini-2.5-pro 사용")
+            st.caption("Thinking 활성화됨 — reasoning 도구 호출 시에만 사고 과정을 사용합니다.")
+            thinking_budget = st.slider(
+                "Thinking Budget",
+                min_value=0,
+                max_value=8192,
+                value=1024,
+                step=128,
+                help=get_parameter_help("thinking_budget"),
+            )
+
+            show_thoughts = st.toggle(
+                "추론 과정 표시",
+                value=False,
+                help="모델의 사고 과정을 UI에 표시",
+            )
+
+            st.caption(f"📊 Thinking budget: {thinking_budget} tokens")
+        else:
+            thinking_budget = 0
+            show_thoughts = False
 
     st.sidebar.divider()
 
-    with st.sidebar.expander("External Search", expanded=False):
+    # === Search ===
+    with st.sidebar.expander("Search", expanded=False):
         search_enabled = st.toggle("Enable Tavily Search", value=True)
         search_depth = st.selectbox(
             "Search Depth",
             options=["basic", "advanced"],
             index=0,
+            help="basic: 빠른 검색, advanced: 심층 검색 (더 많은 크레딧 소모)",
         )
         max_results = st.slider(
             "Max Results",
             min_value=1,
             max_value=10,
             value=5,
+            help="검색 결과 최대 개수",
         )
 
     st.sidebar.divider()
 
-    with st.sidebar.expander("Agent Settings", expanded=False):
+    # === Agent ===
+    with st.sidebar.expander("Agent", expanded=False):
         max_iterations = st.slider(
             "Max Tool Iterations",
             min_value=1,
@@ -143,8 +199,19 @@ def render_sidebar() -> dict:
             help="ReAct 에이전트가 툴을 호출할 수 있는 최대 횟수",
         )
 
+        # Phase 03-3: 요약 압축률 설정
+        compression_rate = st.slider(
+            "요약 압축률",
+            min_value=0.1,
+            max_value=0.5,
+            value=0.3,
+            step=0.05,
+            help=get_parameter_help("compression_rate"),
+        )
+
     st.sidebar.divider()
 
+    # === Session ===
     with st.sidebar.expander("Session", expanded=False):
         if "sessions" not in st.session_state:
             st.session_state.sessions = []
@@ -172,7 +239,7 @@ def render_sidebar() -> dict:
                 st.session_state.current_session = selected_session
                 st.rerun()
         else:
-            st.info("No sessions yet. Create a new one.")
+            st.caption("세션이 없습니다. 아래 버튼으로 새 세션을 생성하세요.")
 
         # 새 세션 생성 버튼
         if st.button("Create New Session"):
@@ -197,16 +264,8 @@ def render_sidebar() -> dict:
 
     st.sidebar.divider()
 
-    if "token_usage" not in st.session_state:
-        st.session_state.token_usage = {"input": 0, "output": 0, "total": 0}
-
-    usage = st.session_state.token_usage
-    st.sidebar.markdown("### Token Usage")
-    st.sidebar.markdown(f"""
-    입력: **{usage['input']:,}** tokens
-    출력: **{usage['output']:,}** tokens
-    총계: **{usage['total']:,}** tokens
-    """)
+    # === Token Usage (progress bar) ===
+    _render_token_usage()
 
     return {
         "gemini_api_key": gemini_key,
@@ -216,6 +275,7 @@ def render_sidebar() -> dict:
         "temperature": temperature,
         "top_p": top_p,
         "max_output_tokens": max_output_tokens,
+        "seed": seed if seed >= 0 else None,  # Phase 03-1: -1은 None (랜덤)
         "search_enabled": search_enabled,
         "search_depth": search_depth,
         "max_results": max_results,
@@ -223,5 +283,9 @@ def render_sidebar() -> dict:
         "session_id": st.session_state.get("current_session", ""),
         # Phase 02-7: 추론 모드 설정
         "reasoning_mode": reasoning_mode,
-        "auto_reasoning": auto_reasoning,
+        # Phase 03-3: 요약 압축률
+        "compression_rate": compression_rate,
+        # Phase 03-5: thinking 설정
+        "thinking_budget": thinking_budget,
+        "show_thoughts": show_thoughts,
     }
