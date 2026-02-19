@@ -386,7 +386,7 @@ MMR = argmax [ lambda * sim(query, doc) - (1 - lambda) * max(sim(doc, selected_d
 
 - [Embeddings - Gemini API 공식 문서](https://ai.google.dev/gemini-api/docs/embeddings) — gemini-embedding-001 모델 사양, task_type, output_dimensionality 설명
 - [Google Gen AI Python SDK - embed_content](https://github.com/googleapis/python-genai) — google-genai SDK의 임베딩 API 사용법
-- [GoogleGenerativeAIEmbeddings - LangChain 공식 문서](https://docs.langchain.com/oss/python/integrations/text_embedding/google_generative_ai) — LangChain 임베딩 통합 가이드
+- [국내 블로그 내 임베딩 정보](hhttps://velog.io/@dongho5041/%EB%94%A5%EB%9F%AC%EB%8B%9D-%EC%9D%B8%EA%B3%B5%EC%8B%A0%EA%B2%BD%EB%A7%9D%EC%9D%98-Embedding%EC%9D%B4%EB%9E%80) — 인공신경망의 Embedding이란?
 - [Chroma - LangChain 통합 문서](https://python.langchain.com/docs/integrations/vectorstores/chroma/) — Chroma 벡터 스토어 사용법과 메타데이터 필터링
 - [FAISS Wiki - GitHub](https://github.com/facebookresearch/faiss/wiki) — FAISS 인덱스 유형, 검색 알고리즘 설명
 - [Gemini Embedding now generally available - Google Developers Blog](https://developers.googleblog.com/gemini-embedding-available-gemini-api/) — gemini-embedding-001 출시 및 MTEB 벤치마크 성능
