@@ -320,5 +320,5 @@ result = MathSolution.model_validate_json(response.text)
 - [Thought Signatures - Google AI for Developers](https://ai.google.dev/gemini-api/docs/thought-signatures) — 멀티턴 대화에서 추론 컨텍스트를 유지하기 위한 Thought Signature 개념 설명
 - [Google Gen AI Python SDK](https://github.com/googleapis/python-genai) — google-genai Python SDK 공식 저장소. ThinkingConfig, GenerateContentConfig 사용법
 - [Google Gen AI SDK Documentation](https://googleapis.github.io/python-genai/) — google-genai SDK 공식 API 문서. ThinkingConfig 파라미터 상세 레퍼런스
-- [ChatGoogleGenerativeAI - LangChain Reference](https://reference.langchain.com/python/integrations/langchain_google_genai/ChatGoogleGenerativeAI/) — LangChain의 ChatGoogleGenerativeAI 클래스 레퍼런스. thinking_budget 파라미터 설명
-- [Thinking - Vertex AI Documentation](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thinking) — Vertex AI에서의 Thinking 모드 사용법. 엔터프라이즈 환경에서의 추론 제어
+- [추론 모델에서 추론이 진행되는 방법](https://modulabs.co.kr/blog/reasoning-model-ai) — 추론 모델 (Reasoning Model): AI가 단계별로 생각하는 혁신적 접근법
+- [생각하는 AI의 시대, 패러다임의 변화: 추론 모델](https://clova.ai/tech-blog/%EC%83%9D%EA%B0%81%ED%95%98%EB%8A%94-ai%EC%9D%98-%EC%8B%9C%EB%8C%80-%ED%8C%A8%EB%9F%AC%EB%8B%A4%EC%9E%84%EC%9D%98-%EB%B3%80%ED%99%94-%EC%B6%94%EB%A1%A0-%EB%AA%A8%EB%8D%B8) — 생각하는 AI의 시대, 패러다임의 변화: 추론 모델

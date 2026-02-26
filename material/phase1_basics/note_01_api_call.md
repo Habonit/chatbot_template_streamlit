@@ -312,6 +312,7 @@ result = chain.invoke({"term": "API"})
 
 ## 참고 자료
 
+- [Google SDK vs Langchain](https://s6820w.tistory.com/136) - Google SDK vs Langchain
 - [Gemini API Quickstart (Google 공식)](https://ai.google.dev/gemini-api/docs/quickstart) — Gemini API 시작 가이드. API 키 설정부터 첫 호출까지의 과정을 다룬다.
 - [Google Gen AI Python SDK 공식 문서](https://googleapis.github.io/python-genai/) — google-genai SDK의 API 레퍼런스. `Client`, `generate_content`, `GenerateContentResponse` 등의 상세 명세를 확인할 수 있다.
 - [Google Gen AI Python SDK GitHub](https://github.com/googleapis/python-genai) — SDK 소스코드와 README. 설치 방법, Client 설정, 코드 예제를 포함한다.
